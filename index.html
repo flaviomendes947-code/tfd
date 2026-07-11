@@ -641,17 +641,6 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       <Field label="Agendado por"><input placeholder="Nome de quem realizou o agendamento" value={form.agendadoPor} onChange={set('agendadoPor')} /></Field>
     </div>
 
-    <div className="section-title">Conclusão da viagem</div>
-    <div className="grid grid-2">
-      <Field label="Desfecho da viagem">
-        <select value={form.resultadoViagem} onChange={set('resultadoViagem')}>
-          <option value="">Selecione</option>
-          {RESULTADOS_VIAGEM.map(r => <option key={r}>{r}</option>)}
-        </select>
-      </Field>
-      <Field label="Data de realização"><input type="date" value={form.dataRealizacao} onChange={set('dataRealizacao')} /></Field>
-    </div>
-
     <div className="grid" style={{marginTop:16}}>
       <Field label="Observações gerais"><textarea placeholder="Informações relevantes: necessidade de cadeira de rodas, maca, restrições, etc." value={form.obs} onChange={set('obs')} /></Field>
     </div>
@@ -672,7 +661,7 @@ function StatusBadge({ status }){
   return <span className={"badge " + cls}>{status}</span>;
 }
 
-function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas }){
+function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas, save }){
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fDestino, setFDestino] = useState("");
@@ -735,7 +724,16 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
               <td>{p.status === "Agendado" ? motoristaName(p.motoristaId) : "—"}</td>
               <td>{p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td><StatusBadge status={p.status}/></td>
-              <td>{p.resultadoViagem || "—"}</td>
+              <td>
+                <select
+                  value={p.resultadoViagem || ""}
+                  onChange={async (e) => { await save({ ...p, resultadoViagem: e.target.value }); }}
+                  style={{padding:'6px 8px', fontSize:13}}
+                >
+                  <option value="">—</option>
+                  {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </td>
               <td>
                 <div className="row-actions">
                   <button className="icon-btn" onClick={()=>onEdit(p)}><IconEdit/></button>
@@ -1355,6 +1353,7 @@ function App(){
     {tab === "solicitacoes" && (
       <SolicitacoesList solicitacoes={sol.items} loading={sol.loading}
         motoristas={mot.items}
+        save={sol.save}
         onEdit={(p)=>{ setEditingSolicitacao(p); setTab("cadastro"); }}
         onDelete={(p)=>setConfirmDel(p)} />
     )}
@@ -1398,5 +1397,6 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
