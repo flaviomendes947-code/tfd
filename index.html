@@ -316,7 +316,7 @@ const LOCAIS_PADRAO = [];
 
 const VEICULOS = ["Carro", "Van", "Micro-ônibus", "Ônibus", "Ambulância"];
 
-const RESULTADOS_VIAGEM = ["Realizada", "Paciente não compareceu", "Cancelada pela unidade", "Cancelada pelo paciente"];
+const RESULTADOS_VIAGEM = ["Realizada", "Cancelada pela secretaria", "Cancelada pelo paciente", "Paciente faltou"];
 
 const TIPOS_AGENDAMENTO = ["Normal", "Excepcional"];
 
@@ -643,7 +643,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
 
     <div className="section-title">Conclusão da viagem</div>
     <div className="grid grid-2">
-      <Field label="Resultado da viagem">
+      <Field label="Desfecho da viagem">
         <select value={form.resultadoViagem} onChange={set('resultadoViagem')}>
           <option value="">Selecione</option>
           {RESULTADOS_VIAGEM.map(r => <option key={r}>{r}</option>)}
@@ -676,6 +676,8 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fDestino, setFDestino] = useState("");
+  const [fMotorista, setFMotorista] = useState("");
+  const [fData, setFData] = useState("");
 
   const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
   const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.destino)), [solicitacoes]);
@@ -686,12 +688,14 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
     return solicitacoes.filter(p =>
       (p.nome||"").toLowerCase().includes(t) &&
       (!fStatus || p.status === fStatus) &&
-      (!fDestino || p.destino === fDestino)
+      (!fDestino || p.destino === fDestino) &&
+      (!fMotorista || p.motoristaId === fMotorista) &&
+      (!fData || p.dataViagem === fData)
     );
-  }, [solicitacoes, q, fStatus, fDestino]);
+  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fData]);
 
-  const hasFilters = fStatus || fDestino;
-  const clearAll = () => { setFStatus(""); setFDestino(""); };
+  const hasFilters = fStatus || fDestino || fMotorista || fData;
+  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFData(""); };
 
   return <div className="card">
     <div className="toolbar">
@@ -704,6 +708,11 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
         <option value="">Destino (todos)</option>
         {destinoOptions.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
+      <select style={{maxWidth:180}} value={fMotorista} onChange={e=>setFMotorista(e.target.value)}>
+        <option value="">Motorista (todos)</option>
+        {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+      </select>
+      <input type="date" style={{maxWidth:160}} value={fData} onChange={e=>setFData(e.target.value)} />
       {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
       <span className="count-pill">{filtered.length} solicitaç{filtered.length!==1?"ões":"ão"}</span>
     </div>
@@ -715,7 +724,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
       </div>
     ) : (
       <table>
-        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Data da viagem</th><th>Status</th><th>Desfecho viagem</th><th></th></tr></thead>
         <tbody>
           {filtered.map(p => (
             <tr key={p.id}>
@@ -724,7 +733,9 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
               <td>{p.telefone || "—"}</td>
               <td>{p.destino || "—"}</td>
               <td>{p.status === "Agendado" ? motoristaName(p.motoristaId) : "—"}</td>
+              <td>{p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td><StatusBadge status={p.status}/></td>
+              <td>{p.resultadoViagem || "—"}</td>
               <td>
                 <div className="row-actions">
                   <button className="icon-btn" onClick={()=>onEdit(p)}><IconEdit/></button>
@@ -896,7 +907,7 @@ function ExportTab({ solicitacoes, motoristas, notify }){
       {key:'tipoTransporte',label:'Tipo de veículo'},{key:'acompanhante',label:'Acompanhante'},
       {key:'nomeAcompanhante',label:'Nome do acompanhante'},{key:'prioridade',label:'Prioridade'},
       {key:'status',label:'Status'},{key:'motoristaNome',label:'Motorista'},{key:'agendadoPor',label:'Agendado por'},
-      {key:'resultadoViagem',label:'Resultado da viagem'},{key:'dataRealizacao',label:'Data de realização'},
+      {key:'resultadoViagem',label:'Desfecho da viagem'},{key:'dataRealizacao',label:'Data de realização'},
       {key:'obs',label:'Observações'}
     ];
     downloadCSV("solicitacoes-tfd.csv", toCSV(rows, headers));
@@ -1387,4 +1398,5 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
