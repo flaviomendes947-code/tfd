@@ -18,23 +18,14 @@
     }
     var storageMode = (typeof window!=='undefined' && window.storage) ? 'cloud' : (lsAvailable() ? 'local' : 'memory');
     var bannerShown = false;
-    function markDowngrade(err){
+    function markDowngrade(){
       var next = storageMode==='cloud' ? (lsAvailable() ? 'local' : 'memory') : 'memory';
       if(next !== storageMode){
         storageMode = next;
         if(!bannerShown){
           bannerShown = true;
           var el = document.getElementById('storage-fallback-banner');
-          if(el){
-            el.style.display = 'block';
-            var reason = err && err.message ? err.message : String(err||'');
-            if(reason){
-              var small = document.createElement('div');
-              small.style.cssText = 'font:400 11px monospace;opacity:.75;margin-top:2px;';
-              small.textContent = 'Detalhe técnico: ' + reason;
-              el.appendChild(small);
-            }
-          }
+          if(el) el.style.display = 'block';
         }
       }
     }
@@ -43,17 +34,14 @@
     window.Store = {
       get: async function(key, shared){
         if(storageMode==='cloud'){
-          // Importante: buscar uma chave que ainda não existe É ESPERADO gerar erro
-          // (comportamento documentado do armazenamento da Claude) — isso não significa
-          // que o armazenamento compartilhado falhou, então aqui NÃO rebaixamos o modo.
           try{ return await window.storage.get(key, shared); }
-          catch(e){ return null; }
+          catch(e){ markDowngrade(); return window.Store.get(key, shared); }
         }
         if(storageMode==='local'){
           try{
             var raw = localStorage.getItem(lsKey(key));
             return raw!==null ? {key:key, value:raw, shared:shared} : null;
-          }catch(e){ markDowngrade(e); return window.Store.get(key, shared); }
+          }catch(e){ markDowngrade(); return window.Store.get(key, shared); }
         }
         return (key in MEM) ? {key:key, value:MEM[key], shared:shared} : null;
       },
@@ -63,11 +51,11 @@
             var r = await window.storage.set(key, value, shared);
             if(!r) throw new Error('set retornou vazio');
             return r;
-          }catch(e){ markDowngrade(e); return window.Store.set(key, value, shared); }
+          }catch(e){ markDowngrade(); return window.Store.set(key, value, shared); }
         }
         if(storageMode==='local'){
           try{ localStorage.setItem(lsKey(key), value); return {key:key, value:value, shared:shared}; }
-          catch(e){ markDowngrade(e); return window.Store.set(key, value, shared); }
+          catch(e){ markDowngrade(); return window.Store.set(key, value, shared); }
         }
         MEM[key] = value;
         return {key:key, value:value, shared:shared};
@@ -75,11 +63,11 @@
       delete: async function(key, shared){
         if(storageMode==='cloud'){
           try{ return await window.storage.delete(key, shared); }
-          catch(e){ markDowngrade(e); return window.Store.delete(key, shared); }
+          catch(e){ markDowngrade(); return window.Store.delete(key, shared); }
         }
         if(storageMode==='local'){
           try{ localStorage.removeItem(lsKey(key)); return {key:key, deleted:true, shared:shared}; }
-          catch(e){ markDowngrade(e); return window.Store.delete(key, shared); }
+          catch(e){ markDowngrade(); return window.Store.delete(key, shared); }
         }
         delete MEM[key];
         return {key:key, deleted:true, shared:shared};
@@ -87,7 +75,7 @@
       list: async function(prefix, shared){
         if(storageMode==='cloud'){
           try{ return await window.storage.list(prefix, shared); }
-          catch(e){ markDowngrade(e); return window.Store.list(prefix, shared); }
+          catch(e){ markDowngrade(); return window.Store.list(prefix, shared); }
         }
         if(storageMode==='local'){
           try{
@@ -98,7 +86,7 @@
               if(k && k.indexOf(p)===0) keys.push(k.slice('tfd_ls__'.length));
             }
             return {keys:keys, prefix:prefix, shared:shared};
-          }catch(e){ markDowngrade(e); return window.Store.list(prefix, shared); }
+          }catch(e){ markDowngrade(); return window.Store.list(prefix, shared); }
         }
         var keys2 = Object.keys(MEM).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
         return {keys:keys2, prefix:prefix, shared:shared};
@@ -354,7 +342,7 @@ const LOCAIS_PADRAO = [];
 
 const VEICULOS = ["Carro", "Van", "Micro-ônibus", "Ônibus", "Ambulância"];
 
-const RESULTADOS_VIAGEM = ["Realizada", "Cancelada pelo paciente", "Paciente não compareceu", "Cancelada pela secretaria"];
+const RESULTADOS_VIAGEM = ["Realizada", "Paciente não compareceu", "Cancelada pela unidade", "Cancelada pelo paciente"];
 
 const TIPOS_AGENDAMENTO = ["Normal", "Excepcional"];
 
@@ -362,8 +350,8 @@ const blankSolicitacao = () => ({
   id: null, tipoAgendamento:"",
   nome:"", cpf:"", nascimento:"", sexo:"",
   telefone:"", endereco:"",
-  unidade:"", destino:"", local:"", motivo:"",
-  dataViagem:"", horarioSaida:"", pontoReferencia:"",
+  unidade:"", destino:"", local:"", enderecoLocal:"", motivo:"",
+  dataViagem:"", horarioSaida:"", pontoReferencia:"", pontoReferenciaSaida:"",
   status:"Agendado", motoristaId:"", tipoTransporte:"", agendadoPor:"",
   acompanhante:"Não", nomeAcompanhante:"",
   prioridade:"",
@@ -372,50 +360,27 @@ const blankSolicitacao = () => ({
 });
 const blankMotorista = () => ({ id:null, nome:"", tipoVeiculo:"", cnh:"", placa:"", telefone:"", status:"Ativo" });
 
-// Guarda a coleção inteira sob UMA única chave (em vez de uma chave por registro).
-// Isso evita disparar dezenas de chamadas de armazenamento em paralelo (uma por
-// solicitação/motorista) toda vez que a lista carrega, o que pode esbarrar em
-// limites de requisição e derrubar o app para o modo de armazenamento local.
 function useCollection(prefix){
-  const dataKey = prefix + "all";
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const itemsRef = useRef([]);
-  useEffect(() => { itemsRef.current = items; }, [items]);
-
-  const sortList = (list) => list.slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
 
   const load = useCallback(async () => {
     setLoading(true);
     try{
-      const r = await Store.get(dataKey, true);
-      let list = [];
-      if(r){
-        const parsed = JSON.parse(r.value);
-        list = Array.isArray(parsed) ? parsed : [];
-      } else {
-        // Migração única: versões antigas guardavam um registro por chave
-        // (prefix + id). Se ainda não existe a chave consolidada, procura
-        // e junta os registros antigos, salvando no novo formato.
+      const listRes = await Store.list(prefix, true);
+      const keys = (listRes && listRes.keys) ? listRes.keys : [];
+      const results = await Promise.all(keys.map(async k => {
         try{
-          const listRes = await Store.list(prefix, true);
-          const oldKeys = ((listRes && listRes.keys) || []).filter(k => k !== "all");
-          if(oldKeys.length){
-            const results = await Promise.all(oldKeys.map(async k => {
-              try{ const rr = await Store.get(prefix + k, true); return rr ? JSON.parse(rr.value) : null; }
-              catch(e){ return null; }
-            }));
-            list = results.filter(Boolean);
-            await Store.set(dataKey, JSON.stringify(list), true);
-          }
-        }catch(e){ /* sem dados antigos ou falha na migração; segue com lista vazia */ }
-      }
-      setItems(sortList(list));
+          const r = await Store.get(k, true);
+          return r ? JSON.parse(r.value) : null;
+        }catch(e){ return null; }
+      }));
+      setItems(results.filter(Boolean).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
     }catch(e){
       setItems([]);
     }
     setLoading(false);
-  }, [dataKey, prefix]);
+  }, [prefix]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -423,20 +388,15 @@ function useCollection(prefix){
     const rec = { ...record };
     if(!rec.id) rec.id = uid();
     if(!rec.createdAt) rec.createdAt = Date.now();
-    const current = itemsRef.current;
-    const idx = current.findIndex(x => x.id === rec.id);
-    const next = idx >= 0 ? current.map((x,i)=> i===idx ? rec : x) : [...current, rec];
-    await Store.set(dataKey, JSON.stringify(next), true);
-    setItems(sortList(next));
+    await Store.set(prefix + rec.id, JSON.stringify(rec), true);
+    await load();
     return rec;
-  }, [dataKey]);
+  }, [prefix, load]);
 
   const remove = useCallback(async (id) => {
-    const current = itemsRef.current;
-    const next = current.filter(x => x.id !== id);
-    await Store.set(dataKey, JSON.stringify(next), true);
-    setItems(sortList(next));
-  }, [dataKey]);
+    await Store.delete(prefix + id, true);
+    await load();
+  }, [prefix, load]);
 
   return { items, loading, save, remove, reload: load };
 }
@@ -642,6 +602,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
       <Field label="Ponto de referência"><input placeholder="Ex: perto da praça, próximo ao mercado..." value={form.pontoReferencia} onChange={set('pontoReferencia')} /></Field>
+      <Field label="Ponto de referência de saída"><input placeholder="Ex: portão principal, em frente à farmácia..." value={form.pontoReferenciaSaida} onChange={set('pontoReferenciaSaida')} /></Field>
     </div>
 
     <div className="section-title">Dados da viagem</div>
@@ -666,6 +627,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
           {listaLocais.map(l => <option key={l}>{l}</option>)}
         </select>
       </Field>
+      <Field label="Endereço do local"><input placeholder="Rua, número, bairro do local de destino" value={form.enderecoLocal} onChange={set('enderecoLocal')} /></Field>
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
       <Field label="Data da viagem / consulta" required><input type="date" value={form.dataViagem} onChange={set('dataViagem')} /></Field>
@@ -740,7 +702,6 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fDestino, setFDestino] = useState("");
-  const [fDataViagem, setFDataViagem] = useState("");
 
   const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
   const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.destino)), [solicitacoes]);
@@ -751,13 +712,12 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
     return solicitacoes.filter(p =>
       (p.nome||"").toLowerCase().includes(t) &&
       (!fStatus || p.status === fStatus) &&
-      (!fDestino || p.destino === fDestino) &&
-      (!fDataViagem || p.dataViagem === fDataViagem)
+      (!fDestino || p.destino === fDestino)
     );
-  }, [solicitacoes, q, fStatus, fDestino, fDataViagem]);
+  }, [solicitacoes, q, fStatus, fDestino]);
 
-  const hasFilters = fStatus || fDestino || fDataViagem;
-  const clearAll = () => { setFStatus(""); setFDestino(""); setFDataViagem(""); };
+  const hasFilters = fStatus || fDestino;
+  const clearAll = () => { setFStatus(""); setFDestino(""); };
 
   return <div className="card">
     <div className="toolbar">
@@ -770,7 +730,6 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
         <option value="">Destino (todos)</option>
         {destinoOptions.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
-      <input type="date" style={{maxWidth:170}} value={fDataViagem} onChange={e=>setFDataViagem(e.target.value)} title="Filtrar por data da viagem" />
       {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
       <span className="count-pill">{filtered.length} solicitaç{filtered.length!==1?"ões":"ão"}</span>
     </div>
@@ -782,19 +741,16 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas 
       </div>
     ) : (
       <table>
-        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Data da viagem</th><th>Destino</th><th>Local</th><th>Motorista</th><th>Status</th><th>Desfecho da viagem</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {filtered.map(p => (
             <tr key={p.id}>
               <td>{p.nome}</td>
               <td>{p.nascimento ? new Date(p.nascimento+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td>{p.telefone || "—"}</td>
-              <td>{p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td>{p.destino || "—"}</td>
-              <td>{p.local || "—"}</td>
               <td>{p.status === "Agendado" ? motoristaName(p.motoristaId) : "—"}</td>
               <td><StatusBadge status={p.status}/></td>
-              <td>{p.resultadoViagem || "—"}</td>
               <td>
                 <div className="row-actions">
                   <button className="icon-btn" onClick={()=>onEdit(p)}><IconEdit/></button>
@@ -961,8 +917,8 @@ function ExportTab({ solicitacoes, motoristas, notify }){
       {key:'nome',label:'Nome'},{key:'cpf',label:'CPF/CNS'},{key:'nascimento',label:'Nascimento'},
       {key:'sexo',label:'Sexo'},{key:'telefone',label:'Telefone'},
       {key:'endereco',label:'Endereço'},{key:'pontoReferencia',label:'Ponto de referência'},{key:'unidade',label:'Unidade de origem'},
-      {key:'destino',label:'Destino'},{key:'motivo',label:'Motivo'},
-      {key:'dataViagem',label:'Data da viagem'},{key:'horarioSaida',label:'Horário de saída'},
+      {key:'destino',label:'Destino'},{key:'motivo',label:'Motivo'},{key:'local',label:'Local'},{key:'enderecoLocal',label:'Endereço do local'},
+      {key:'dataViagem',label:'Data da viagem'},{key:'horarioSaida',label:'Horário de saída'},{key:'pontoReferenciaSaida',label:'Ponto de referência de saída'},
       {key:'tipoTransporte',label:'Tipo de veículo'},{key:'acompanhante',label:'Acompanhante'},
       {key:'nomeAcompanhante',label:'Nome do acompanhante'},{key:'prioridade',label:'Prioridade'},
       {key:'status',label:'Status'},{key:'motoristaNome',label:'Motorista'},{key:'agendadoPor',label:'Agendado por'},
@@ -1331,7 +1287,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
                 <th className="hide-print" style={{width:36}}>
                   <input type="checkbox" checked={todosMarcados} onChange={toggleTodos} />
                 </th>
-                <th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Ponto de referência</th><th>Data</th><th>Observação</th><th>Acompanhante</th>
+                <th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Endereço do local</th><th>Ponto de referência</th><th>Ponto de ref. de saída</th><th>Data</th><th>Agendado por</th><th>Observação</th><th>Acompanhante</th>
               </tr>
             </thead>
             <tbody>
@@ -1345,8 +1301,11 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
                   <td>{p.telefone || "—"}</td>
                   <td>{p.destino || "—"}</td>
                   <td>{p.local || "—"}</td>
+                  <td>{p.enderecoLocal || "—"}</td>
                   <td>{p.pontoReferencia || "—"}</td>
+                  <td>{p.pontoReferenciaSaida || "—"}</td>
                   <td>{fmt(p.dataViagem)}</td>
+                  <td>{p.agendadoPor || "—"}</td>
                   <td>{p.obs || "—"}</td>
                   <td>{p.acompanhante === "Sim" ? (p.nomeAcompanhante || "Sim") : "Não"}</td>
                 </tr>
@@ -1454,3 +1413,4 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
