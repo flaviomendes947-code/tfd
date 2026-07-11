@@ -666,7 +666,9 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
   const [fStatus, setFStatus] = useState("");
   const [fDestino, setFDestino] = useState("");
   const [fMotorista, setFMotorista] = useState("");
-  const [fData, setFData] = useState("");
+  const [fDesfecho, setFDesfecho] = useState("");
+  const [fDataIni, setFDataIni] = useState("");
+  const [fDataFim, setFDataFim] = useState("");
 
   const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
   const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.destino)), [solicitacoes]);
@@ -679,14 +681,35 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
       (!fStatus || p.status === fStatus) &&
       (!fDestino || p.destino === fDestino) &&
       (!fMotorista || p.motoristaId === fMotorista) &&
-      (!fData || p.dataViagem === fData)
+      (!fDesfecho || (fDesfecho === "Sem desfecho" ? !p.resultadoViagem : p.resultadoViagem === fDesfecho)) &&
+      (!fDataIni || (p.dataViagem && p.dataViagem >= fDataIni)) &&
+      (!fDataFim || (p.dataViagem && p.dataViagem <= fDataFim))
     );
-  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fData]);
+  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fDesfecho, fDataIni, fDataFim]);
 
-  const hasFilters = fStatus || fDestino || fMotorista || fData;
-  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFData(""); };
+  const stats = useMemo(() => ({
+    total: filtered.length,
+    agendado: filtered.filter(p=>p.status==="Agendado").length,
+    espera: filtered.filter(p=>p.status==="Lista de espera").length,
+    realizada: filtered.filter(p=>p.resultadoViagem==="Realizada").length,
+    canceladaSecretaria: filtered.filter(p=>p.resultadoViagem==="Cancelada pela secretaria").length,
+    canceladaPaciente: filtered.filter(p=>p.resultadoViagem==="Cancelada pelo paciente").length,
+    faltou: filtered.filter(p=>p.resultadoViagem==="Paciente faltou").length,
+  }), [filtered]);
+
+  const hasFilters = fStatus || fDestino || fMotorista || fDesfecho || fDataIni || fDataFim;
+  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFDesfecho(""); setFDataIni(""); setFDataFim(""); };
 
   return <div className="card">
+    <div className="stat-row" style={{display:"flex", flexWrap:"wrap", gap:10, marginBottom:16}}>
+      <div className="count-pill">Total: {stats.total}</div>
+      <div className="count-pill">Agendadas: {stats.agendado}</div>
+      <div className="count-pill">Lista de espera: {stats.espera}</div>
+      <div className="count-pill">Realizadas: {stats.realizada}</div>
+      <div className="count-pill">Canceladas (secretaria): {stats.canceladaSecretaria}</div>
+      <div className="count-pill">Canceladas (paciente): {stats.canceladaPaciente}</div>
+      <div className="count-pill">Faltas: {stats.faltou}</div>
+    </div>
     <div className="toolbar">
       <input placeholder="Buscar por nome..." value={q} onChange={e=>setQ(e.target.value)} />
       <select style={{maxWidth:160}} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
@@ -701,7 +724,15 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
         <option value="">Motorista (todos)</option>
         {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
       </select>
-      <input type="date" style={{maxWidth:160}} value={fData} onChange={e=>setFData(e.target.value)} />
+      <select style={{maxWidth:200}} value={fDesfecho} onChange={e=>setFDesfecho(e.target.value)}>
+        <option value="">Desfecho (todos)</option>
+        {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
+        <option value="Sem desfecho">Sem desfecho</option>
+      </select>
+      <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
+        De <input type="date" style={{maxWidth:150}} value={fDataIni} onChange={e=>setFDataIni(e.target.value)} />
+        até <input type="date" style={{maxWidth:150}} value={fDataFim} onChange={e=>setFDataFim(e.target.value)} />
+      </span>
       {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
       <span className="count-pill">{filtered.length} solicitaç{filtered.length!==1?"ões":"ão"}</span>
     </div>
@@ -1496,6 +1527,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
