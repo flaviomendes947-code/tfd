@@ -1299,6 +1299,100 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
   </div>;
 }
 
+function DashboardTab({ solicitacoes }){
+  const DESFECHO_COLORS = {
+    "Realizada": "#16a34a",
+    "Cancelada pela secretaria": "#d97706",
+    "Cancelada pelo paciente": "#e03e3e",
+    "Paciente faltou": "#7c3aed",
+    "Sem desfecho": "#cbd5e1"
+  };
+
+  const desfechoData = useMemo(() => {
+    const counts = { "Realizada":0, "Cancelada pela secretaria":0, "Cancelada pelo paciente":0, "Paciente faltou":0, "Sem desfecho":0 };
+    solicitacoes.forEach(p => {
+      const k = RESULTADOS_VIAGEM.includes(p.resultadoViagem) ? p.resultadoViagem : "Sem desfecho";
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const total = solicitacoes.length || 1;
+    return Object.entries(counts)
+      .filter(([,v]) => v > 0)
+      .map(([label, value]) => ({ label, value, pct: Math.round((value/total)*100) }));
+  }, [solicitacoes]);
+
+  const conicGradient = useMemo(() => {
+    let acc = 0;
+    const total = solicitacoes.length || 1;
+    const stops = desfechoData.map(d => {
+      const start = (acc/total)*360;
+      acc += d.value;
+      const end = (acc/total)*360;
+      return `${DESFECHO_COLORS[d.label]} ${start}deg ${end}deg`;
+    });
+    return stops.length ? `conic-gradient(${stops.join(",")})` : "conic-gradient(#e2e8f0 0deg 360deg)";
+  }, [desfechoData, solicitacoes]);
+
+  const destinoData = useMemo(() => {
+    const counts = {};
+    solicitacoes.forEach(p => { const d = p.destino || "Não informado"; counts[d] = (counts[d]||0) + 1; });
+    return Object.entries(counts).map(([label,value]) => ({label,value})).sort((a,b)=>b.value-a.value).slice(0,8);
+  }, [solicitacoes]);
+  const maxDestino = Math.max(1, ...destinoData.map(d=>d.value));
+
+  return <div>
+    <div className="grid grid-2" style={{alignItems:"stretch"}}>
+      <div className="card">
+        <div className="section-title" style={{marginTop:0}}>Desfecho das viagens</div>
+        {solicitacoes.length === 0 ? (
+          <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
+        ) : (
+          <div style={{display:"flex", alignItems:"center", gap:28, flexWrap:"wrap"}}>
+            <div style={{
+              width:170, height:170, borderRadius:"50%", background:conicGradient,
+              flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center"
+            }}>
+              <div style={{width:100, height:100, borderRadius:"50%", background:"var(--panel)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
+                <div style={{fontSize:22, fontWeight:700}}>{solicitacoes.length}</div>
+                <div style={{fontSize:11, color:"var(--muted)"}}>viagens</div>
+              </div>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:10, flex:1, minWidth:180}}>
+              {desfechoData.map(d => (
+                <div key={d.label} style={{display:"flex", alignItems:"center", gap:8, fontSize:13}}>
+                  <span style={{width:10, height:10, borderRadius:3, background:DESFECHO_COLORS[d.label], flexShrink:0}}></span>
+                  <span style={{flex:1, color:"var(--text)"}}>{d.label}</span>
+                  <span style={{color:"var(--muted)", fontWeight:600}}>{d.value} ({d.pct}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title" style={{marginTop:0}}>Viagens por destino</div>
+        {destinoData.length === 0 ? (
+          <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
+        ) : (
+          <div style={{display:"flex", flexDirection:"column", gap:12}}>
+            {destinoData.map(d => (
+              <div key={d.label}>
+                <div style={{display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4}}>
+                  <span>{d.label}</span>
+                  <span style={{color:"var(--muted)", fontWeight:600}}>{d.value}</span>
+                </div>
+                <div style={{background:"var(--panel2)", borderRadius:6, height:10, overflow:"hidden"}}>
+                  <div style={{width:`${(d.value/maxDestino)*100}%`, height:"100%", background:"var(--accent)", borderRadius:6}}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>;
+}
+
 function App(){
   const [tab, setTab] = useState("cadastro");
   const [toast, setToast] = useState("");
@@ -1312,6 +1406,7 @@ function App(){
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2600); };
 
   const tabs = [
+    {id:"dashboard", label:"Dashboard", icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>},
     {id:"cadastro", label: editingSolicitacao ? "Editando solicitação" : "Nova solicitação", icon:<IconPlus/>},
     {id:"solicitacoes", label:"Solicitações", icon:<IconSearch/>},
     {id:"lista-espera", label:`Lista de espera (${sol.items.filter(p=>p.status==="Lista de espera").length})`, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
@@ -1339,6 +1434,10 @@ function App(){
         </button>
       ))}
     </div>
+
+    {tab === "dashboard" && (
+      <DashboardTab solicitacoes={sol.items} />
+    )}
 
     {tab === "cadastro" && (
       <SolicitacaoForm save={sol.save} notify={notify}
@@ -1397,6 +1496,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
