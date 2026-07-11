@@ -1,0 +1,1456 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<div id="app-root"></div>
+<div id="storage-fallback-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#fffbeb;color:#92400e;border-bottom:1px solid #fde68a;padding:10px 16px;font:500 13px -apple-system,'Segoe UI',sans-serif;text-align:center;">
+  ⚠ Este arquivo está salvando os dados apenas neste navegador/computador (o armazenamento compartilhado da Claude não está disponível aqui). Evite aba anônima e não limpe os dados do navegador, ou os cadastros serão perdidos.
+</div>
+<div id="fatal-toast" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#e03e3e;color:#fff;padding:11px 18px;border-radius:9px;font:500 13.5px -apple-system,'Segoe UI',sans-serif;max-width:90vw;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
+<script>
+  // Camada de armazenamento resiliente: tenta o armazenamento compartilhado da Claude;
+  // se indisponível ou falhar, cai para localStorage do navegador; se isso também falhar
+  // (ex.: aba anônima, arquivo aberto via file://), cai para memória (funciona só na sessão atual).
+  (function(){
+    var MEM = Object.create(null);
+    function lsAvailable(){
+      try{ var t='__tfd_probe__'; localStorage.setItem(t,'1'); localStorage.removeItem(t); return true; }
+      catch(e){ return false; }
+    }
+    var storageMode = (typeof window!=='undefined' && window.storage) ? 'cloud' : (lsAvailable() ? 'local' : 'memory');
+    var bannerShown = false;
+    function markDowngrade(err){
+      var next = storageMode==='cloud' ? (lsAvailable() ? 'local' : 'memory') : 'memory';
+      if(next !== storageMode){
+        storageMode = next;
+        if(!bannerShown){
+          bannerShown = true;
+          var el = document.getElementById('storage-fallback-banner');
+          if(el){
+            el.style.display = 'block';
+            var reason = err && err.message ? err.message : String(err||'');
+            if(reason){
+              var small = document.createElement('div');
+              small.style.cssText = 'font:400 11px monospace;opacity:.75;margin-top:2px;';
+              small.textContent = 'Detalhe técnico: ' + reason;
+              el.appendChild(small);
+            }
+          }
+        }
+      }
+    }
+    function lsKey(k){ return 'tfd_ls__' + k; }
+
+    window.Store = {
+      get: async function(key, shared){
+        if(storageMode==='cloud'){
+          // Importante: buscar uma chave que ainda não existe É ESPERADO gerar erro
+          // (comportamento documentado do armazenamento da Claude) — isso não significa
+          // que o armazenamento compartilhado falhou, então aqui NÃO rebaixamos o modo.
+          try{ return await window.storage.get(key, shared); }
+          catch(e){ return null; }
+        }
+        if(storageMode==='local'){
+          try{
+            var raw = localStorage.getItem(lsKey(key));
+            return raw!==null ? {key:key, value:raw, shared:shared} : null;
+          }catch(e){ markDowngrade(e); return window.Store.get(key, shared); }
+        }
+        return (key in MEM) ? {key:key, value:MEM[key], shared:shared} : null;
+      },
+      set: async function(key, value, shared){
+        if(storageMode==='cloud'){
+          try{
+            var r = await window.storage.set(key, value, shared);
+            if(!r) throw new Error('set retornou vazio');
+            return r;
+          }catch(e){ markDowngrade(e); return window.Store.set(key, value, shared); }
+        }
+        if(storageMode==='local'){
+          try{ localStorage.setItem(lsKey(key), value); return {key:key, value:value, shared:shared}; }
+          catch(e){ markDowngrade(e); return window.Store.set(key, value, shared); }
+        }
+        MEM[key] = value;
+        return {key:key, value:value, shared:shared};
+      },
+      delete: async function(key, shared){
+        if(storageMode==='cloud'){
+          try{ return await window.storage.delete(key, shared); }
+          catch(e){ markDowngrade(e); return window.Store.delete(key, shared); }
+        }
+        if(storageMode==='local'){
+          try{ localStorage.removeItem(lsKey(key)); return {key:key, deleted:true, shared:shared}; }
+          catch(e){ markDowngrade(e); return window.Store.delete(key, shared); }
+        }
+        delete MEM[key];
+        return {key:key, deleted:true, shared:shared};
+      },
+      list: async function(prefix, shared){
+        if(storageMode==='cloud'){
+          try{ return await window.storage.list(prefix, shared); }
+          catch(e){ markDowngrade(e); return window.Store.list(prefix, shared); }
+        }
+        if(storageMode==='local'){
+          try{
+            var keys=[];
+            var p = 'tfd_ls__' + (prefix||'');
+            for(var i=0;i<localStorage.length;i++){
+              var k = localStorage.key(i);
+              if(k && k.indexOf(p)===0) keys.push(k.slice('tfd_ls__'.length));
+            }
+            return {keys:keys, prefix:prefix, shared:shared};
+          }catch(e){ markDowngrade(e); return window.Store.list(prefix, shared); }
+        }
+        var keys2 = Object.keys(MEM).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
+        return {keys:keys2, prefix:prefix, shared:shared};
+      }
+    };
+
+    // Mostra qualquer erro inesperado na tela em vez de falhar silenciosamente.
+    function showFatal(msg){
+      var el = document.getElementById('fatal-toast');
+      if(!el) return;
+      el.textContent = 'Erro: ' + msg;
+      el.style.display = 'block';
+      clearTimeout(window.__fatalTimer);
+      window.__fatalTimer = setTimeout(function(){ el.style.display = 'none'; }, 6000);
+    }
+    window.addEventListener('error', function(e){
+      showFatal(e.message || 'erro desconhecido');
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      var r = e.reason;
+      showFatal(r && r.message ? r.message : String(r));
+    });
+  })();
+</script>
+<style>
+  :root{
+    --bg:#f0f4f9;
+    --panel:#ffffff;
+    --panel2:#f7f9fc;
+    --border:#e2e8f0;
+    --border-strong:#c9d4e3;
+    --text:#1a2233;
+    --muted:#64748b;
+    --accent:#3b6ff0;
+    --accent-soft:#ebf0fe;
+    --accent-dark:#2454c7;
+    --danger:#e03e3e;
+    --danger-soft:#fef2f2;
+    --ok:#16a34a;
+    --ok-soft:#f0fdf4;
+    --warn:#d97706;
+    --warn-soft:#fffbeb;
+    --shadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 12px rgba(0,0,0,.05);
+    --shadow-md: 0 4px 16px rgba(0,0,0,.10);
+  }
+  #app-root, #app-root *{ box-sizing:border-box; font-family: -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
+  #app-root{ background:var(--bg); color:var(--text); min-height:100%; padding:28px 24px 60px; }
+
+  .header{ display:flex; align-items:center; gap:16px; margin-bottom:18px; }
+  .logo{ width:52px; height:52px; border-radius:14px; background:var(--accent); display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 4px 12px rgba(59,111,240,.35); }
+  .logo svg{ width:26px; height:26px; }
+  .header h1{ font-size:19px; font-weight:700; margin:0; color:var(--text); }
+  .header p{ font-size:13px; color:var(--muted); margin:3px 0 0; }
+
+  .banner{ background:var(--warn-soft); border:1px solid #fde68a; color:var(--warn); border-radius:12px; padding:13px 16px; font-size:13px; line-height:1.5; margin-bottom:22px; display:flex; gap:10px; }
+
+  .tabs{ display:flex; gap:8px; margin-bottom:26px; flex-wrap:wrap; }
+  .tab{ background:var(--panel); border:1px solid var(--border); color:var(--muted); padding:10px 16px; border-radius:10px; font-size:13.5px; cursor:pointer; font-weight:500; display:flex; align-items:center; gap:8px; transition:.15s; box-shadow:var(--shadow); }
+  .tab:hover{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .tab.active{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px rgba(59,111,240,.3); }
+
+  .section-title{ font-size:11.5px; letter-spacing:.07em; color:var(--muted); font-weight:700; margin:24px 0 12px; text-transform:uppercase; }
+  .section-title:first-child{ margin-top:0; }
+
+  .grid{ display:grid; gap:16px; }
+  .grid-3{ grid-template-columns:repeat(3,1fr); }
+  .grid-2{ grid-template-columns:repeat(2,1fr); }
+  @media(max-width:820px){ .grid-3,.grid-2{ grid-template-columns:1fr; } }
+
+  label{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:500; }
+  label .req{ color:var(--danger); }
+  input, select, textarea{
+    width:100%; background:var(--panel2); border:1.5px solid var(--border); color:var(--text);
+    padding:11px 13px; border-radius:9px; font-size:14.5px; outline:none; transition:.15s;
+  }
+  input::placeholder, textarea::placeholder{ color:#aab4c4; }
+  input:focus, select:focus, textarea:focus{ border-color:var(--accent); background:#fff; box-shadow:0 0 0 3px rgba(59,111,240,.12); }
+  input:disabled{ background:#f1f5f9; color:var(--muted); cursor:not-allowed; }
+  textarea{ resize:vertical; min-height:90px; }
+  select{ appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 13px center; padding-right:36px; }
+
+  .field{ margin-bottom:4px; }
+
+  .actions-row{ display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; align-items:center; }
+  .btn{ padding:11px 20px; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer; border:1.5px solid transparent; transition:.15s; }
+  .btn-primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn-primary:hover{ background:var(--accent-dark); border-color:var(--accent-dark); }
+  .btn-secondary{ background:var(--panel); border-color:var(--border); color:var(--text); }
+  .btn-secondary:hover{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .btn-danger{ background:var(--danger-soft); border-color:#fca5a5; color:var(--danger); display:inline-flex; align-items:center; gap:8px; }
+  .btn-danger:hover{ background:#fee2e2; border-color:var(--danger); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+  .toolbar{ display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; align-items:center; }
+  .toolbar input{ max-width:300px; }
+  .count-pill{ background:var(--accent-soft); border:1px solid #c7d7fc; padding:7px 13px; border-radius:20px; font-size:13px; color:var(--accent); font-weight:600; }
+
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th{ text-align:left; color:var(--muted); font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; padding:10px 14px; border-bottom:2px solid var(--border); background:var(--panel2); }
+  th:first-child{ border-radius:8px 0 0 0; }
+  th:last-child{ border-radius:0 8px 0 0; }
+  td{ padding:13px 14px; border-bottom:1px solid var(--border); vertical-align:middle; color:var(--text); }
+  tr:last-child td{ border-bottom:none; }
+  tr:hover td{ background:#f8faff; }
+  .empty-state{ text-align:center; padding:56px 20px; color:var(--muted); font-size:14px; }
+  .empty-state svg{ margin-bottom:12px; opacity:.35; }
+
+  .badge{ display:inline-block; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:700; }
+  .badge-ativo{ background:var(--ok-soft); color:var(--ok); border:1px solid #bbf7d0; }
+  .badge-inativo{ background:var(--danger-soft); color:var(--danger); border:1px solid #fecaca; }
+  .badge-pausa{ background:var(--warn-soft); color:var(--warn); border:1px solid #fde68a; }
+  .badge-espera{ background:#f0f0ff; color:#6366f1; border:1px solid #c7d2fe; }
+
+  .row-actions{ display:flex; gap:6px; }
+  .icon-btn{ width:32px; height:32px; border-radius:7px; border:1.5px solid var(--border); background:var(--panel); color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; }
+  .icon-btn:hover{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .icon-btn.danger:hover{ border-color:var(--danger); color:var(--danger); background:var(--danger-soft); }
+
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:24px; box-shadow:var(--shadow); }
+  .toast{ position:fixed; bottom:24px; right:24px; background:var(--text); color:#fff; padding:13px 20px; border-radius:10px; font-size:14px; font-weight:500; box-shadow:var(--shadow-md); z-index:999; opacity:0; transform:translateY(8px); transition:.25s; pointer-events:none; }
+  .toast.show{ opacity:1; transform:translateY(0); }
+
+  .loading{ color:var(--muted); font-size:13px; padding:20px 0; }
+  .modal-overlay{ position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center; z-index:998; padding:20px; backdrop-filter:blur(2px); }
+  .modal{ background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:26px; max-width:420px; width:100%; box-shadow:var(--shadow-md); }
+  .modal h3{ margin:0 0 8px; font-size:16px; font-weight:700; color:var(--text); }
+  .modal p{ color:var(--muted); font-size:13.5px; margin:0 0 20px; line-height:1.55; }
+  .modal .actions-row{ margin-top:0; justify-content:flex-end; }
+
+  code{ background:var(--accent-soft); color:var(--accent); padding:2px 7px; border-radius:5px; font-size:12px; font-family:ui-monospace,monospace; }
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  @media(max-width:820px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } }
+  .stat-card{ background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:20px 22px; box-shadow:var(--shadow); }
+  .stat-card .stat-num{ font-size:36px; font-weight:800; line-height:1; margin-bottom:6px; }
+  .stat-card .stat-label{ font-size:13px; color:var(--muted); font-weight:500; }
+  .stat-card.blue .stat-num{ color:#6366f1; }
+  .stat-card.green .stat-num{ color:var(--ok); }
+  .stat-card.warn .stat-num{ color:var(--warn); }
+  .stat-card.red .stat-num{ color:var(--danger); }
+
+  @media print{
+    .hide-print{ display:none !important; }
+    body{ background:#fff; }
+    .card{ box-shadow:none; border:none; padding:0; }
+    table{ font-size:12px; }
+    th, td{ border:1px solid #999 !important; }
+  }
+</style>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function onlyDigits(v){ return (v||"").replace(/\D/g, ""); }
+
+function maskCPF(v){
+  const d = onlyDigits(v).slice(0,11);
+  if(d.length <= 3) return d;
+  if(d.length <= 6) return d.replace(/(\d{3})(\d+)/, '$1.$2');
+  if(d.length <= 9) return d.replace(/(\d{3})(\d{3})(\d+)/, '$1.$2.$3');
+  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+}
+
+function maskCNS(v){
+  const d = onlyDigits(v).slice(0,15);
+  const parts = [d.slice(0,3), d.slice(3,7), d.slice(7,11), d.slice(11,15)].filter(Boolean);
+  return parts.join(' ');
+}
+
+// Campo CPF/CNS aceita ambos: CPF tem 11 dígitos, CNS (Cartão Nacional de Saúde) tem 15.
+function maskCpfCns(v){
+  const d = onlyDigits(v);
+  return d.length > 11 ? maskCNS(v) : maskCPF(v);
+}
+
+function maskPhone(v){
+  const d = onlyDigits(v).slice(0,11);
+  if(d.length <= 2) return d.length ? `(${d}` : d;
+  if(d.length <= 6) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if(d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+}
+
+// Valida os dígitos verificadores do CPF (não valida CNS, que usa outro algoritmo)
+function isValidCPF(cpf){
+  const d = onlyDigits(cpf);
+  if(d.length !== 11) return false;
+  if(/^(\d)\1{10}$/.test(d)) return false;
+  let sum = 0;
+  for(let i=0;i<9;i++) sum += parseInt(d[i],10) * (10-i);
+  let rev = 11 - (sum % 11);
+  if(rev >= 10) rev = 0;
+  if(rev !== parseInt(d[9],10)) return false;
+  sum = 0;
+  for(let i=0;i<10;i++) sum += parseInt(d[i],10) * (11-i);
+  rev = 11 - (sum % 11);
+  if(rev >= 10) rev = 0;
+  if(rev !== parseInt(d[10],10)) return false;
+  return true;
+}
+
+
+function Toast({ message }) {
+  return <div className={"toast hide-print" + (message ? " show" : "")}>{message}</div>;
+}
+
+function IconPlus(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>; }
+function IconEdit(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>; }
+function IconTrash(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>; }
+function IconSearch(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>; }
+function IconUsers(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
+function IconCheck(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>; }
+function IconVan(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 17h1a2 2 0 0 0 4 0h8a2 2 0 0 0 4 0h1v-5l-3-4H7L3 12v5Z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/><path d="M14 8V5H5v7"/></svg>; }
+function IconCarHeader(){ return <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.6"><path d="M5 17H4a1 1 0 0 1-1-1v-4l2.2-4.4A2 2 0 0 1 7 6.4h10a2 2 0 0 1 1.8 1.2L21 12v4a1 1 0 0 1-1 1h-1"/><path d="M5 17h14"/><circle cx="7.5" cy="17" r="1.8"/><circle cx="16.5" cy="17" r="1.8"/></svg>; }
+function IconList(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>; }
+function IconPrint(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>; }
+
+const ESCALA_PRIORIDADE = ["Leve", "Moderada", "Alta"];
+
+const UNIDADES_SAUDE = [
+  "PSF MASSARANDUBA",
+  "PSF CONTRA ACUDE",
+  "PSF HERACLITO MONTENEGRO",
+  "PSF JOAO PAULO II",
+  "PSF NOSSA SENHORA DA CONCEICAO",
+  "PSF BONANCA II",
+  "USF MARIA CRISTINA SOUZA LEAO",
+  "PSF PEDREIRA MANGUEIRA",
+  "PSF ALTO DO SANTO ANTONIO",
+  "PSF ALTO DA MATERNIDADE",
+  "PSF ABC",
+  "PSF VILA HOLANDESA",
+  "PSF ALTO DA LIBERDADE",
+  "PSF CARAUNA",
+  "PSF ALTO DA BELA VISTA",
+  "USF JOSEFA DE SOUZA VERAS",
+  "UBS ENFERMEIRO BRAZ JOSE DA SILVA"
+];
+
+const DESTINOS_PADRAO = [
+  "Recife", "Caruaru", "Gravatá", "Vitória de Santo Antão", "Camaragibe",
+  "Garanhuns", "Belo Jardim", "Ipojuca", "Outro"
+];
+
+const MOTIVOS_PADRAO = [
+  "Oncologia", "Cardiologia", "Nefrologia / Hemodiálise", "Neurologia",
+  "Ortopedia", "Oftalmologia", "Cirurgia Eletiva", "Exames de Imagem",
+  "Fisioterapia Especializada", "Psiquiatria", "Outro"
+];
+
+const LOCAIS_PADRAO = [];
+
+const VEICULOS = ["Carro", "Van", "Micro-ônibus", "Ônibus", "Ambulância"];
+
+const RESULTADOS_VIAGEM = ["Realizada", "Cancelada pelo paciente", "Paciente não compareceu", "Cancelada pela secretaria"];
+
+const TIPOS_AGENDAMENTO = ["Normal", "Excepcional"];
+
+const blankSolicitacao = () => ({
+  id: null, tipoAgendamento:"",
+  nome:"", cpf:"", nascimento:"", sexo:"",
+  telefone:"", endereco:"",
+  unidade:"", destino:"", local:"", motivo:"",
+  dataViagem:"", horarioSaida:"", pontoReferencia:"",
+  status:"Agendado", motoristaId:"", tipoTransporte:"", agendadoPor:"",
+  acompanhante:"Não", nomeAcompanhante:"",
+  prioridade:"",
+  resultadoViagem:"", dataRealizacao:"",
+  obs:""
+});
+const blankMotorista = () => ({ id:null, nome:"", tipoVeiculo:"", cnh:"", placa:"", telefone:"", status:"Ativo" });
+
+// Guarda a coleção inteira sob UMA única chave (em vez de uma chave por registro).
+// Isso evita disparar dezenas de chamadas de armazenamento em paralelo (uma por
+// solicitação/motorista) toda vez que a lista carrega, o que pode esbarrar em
+// limites de requisição e derrubar o app para o modo de armazenamento local.
+function useCollection(prefix){
+  const dataKey = prefix + "all";
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const itemsRef = useRef([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  const sortList = (list) => list.slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try{
+      const r = await Store.get(dataKey, true);
+      let list = [];
+      if(r){
+        const parsed = JSON.parse(r.value);
+        list = Array.isArray(parsed) ? parsed : [];
+      } else {
+        // Migração única: versões antigas guardavam um registro por chave
+        // (prefix + id). Se ainda não existe a chave consolidada, procura
+        // e junta os registros antigos, salvando no novo formato.
+        try{
+          const listRes = await Store.list(prefix, true);
+          const oldKeys = ((listRes && listRes.keys) || []).filter(k => k !== "all");
+          if(oldKeys.length){
+            const results = await Promise.all(oldKeys.map(async k => {
+              try{ const rr = await Store.get(prefix + k, true); return rr ? JSON.parse(rr.value) : null; }
+              catch(e){ return null; }
+            }));
+            list = results.filter(Boolean);
+            await Store.set(dataKey, JSON.stringify(list), true);
+          }
+        }catch(e){ /* sem dados antigos ou falha na migração; segue com lista vazia */ }
+      }
+      setItems(sortList(list));
+    }catch(e){
+      setItems([]);
+    }
+    setLoading(false);
+  }, [dataKey, prefix]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = useCallback(async (record) => {
+    const rec = { ...record };
+    if(!rec.id) rec.id = uid();
+    if(!rec.createdAt) rec.createdAt = Date.now();
+    const current = itemsRef.current;
+    const idx = current.findIndex(x => x.id === rec.id);
+    const next = idx >= 0 ? current.map((x,i)=> i===idx ? rec : x) : [...current, rec];
+    await Store.set(dataKey, JSON.stringify(next), true);
+    setItems(sortList(next));
+    return rec;
+  }, [dataKey]);
+
+  const remove = useCallback(async (id) => {
+    const current = itemsRef.current;
+    const next = current.filter(x => x.id !== id);
+    await Store.set(dataKey, JSON.stringify(next), true);
+    setItems(sortList(next));
+  }, [dataKey]);
+
+  return { items, loading, save, remove, reload: load };
+}
+
+function useListasOpcoes(){
+  const KEY = "tfd_listas_opcoes";
+  const [listas, setListas] = useState({ destinos: DESTINOS_PADRAO, motivos: MOTIVOS_PADRAO, locais: LOCAIS_PADRAO });
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try{
+      const r = await Store.get(KEY, true);
+      const parsed = r ? JSON.parse(r.value) : null;
+      setListas({
+        destinos: (parsed && Array.isArray(parsed.destinos)) ? parsed.destinos : DESTINOS_PADRAO,
+        motivos: (parsed && Array.isArray(parsed.motivos)) ? parsed.motivos : MOTIVOS_PADRAO,
+        locais: (parsed && Array.isArray(parsed.locais)) ? parsed.locais : LOCAIS_PADRAO
+      });
+    }catch(e){
+      setListas({ destinos: DESTINOS_PADRAO, motivos: MOTIVOS_PADRAO, locais: LOCAIS_PADRAO });
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const salvar = useCallback(async (novasListas) => {
+    setListas(novasListas);
+    try{ await Store.set(KEY, JSON.stringify(novasListas), true); }catch(e){}
+  }, []);
+
+  return { listas, loading, salvar, reload: load };
+}
+
+function Field({ label, required, children }){
+  return <div className="field">
+    <label>{label} {required && <span className="req">*</span>}</label>
+    {children}
+  </div>;
+}
+
+function ConfirmModal({ title, text, onConfirm, onCancel }){
+  return <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal" onClick={e=>e.stopPropagation()}>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <div className="actions-row">
+        <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-danger" style={{background:'var(--danger)',color:'#fff'}} onClick={onConfirm}>Excluir</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function QuickScheduleModal({ solicitacao, motoristas, onConfirm, onCancel }){
+  const [motoristaId, setMotoristaId] = useState("");
+  return <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal" onClick={e=>e.stopPropagation()}>
+      <h3>Confirmar viagem</h3>
+      <p>Selecione o motorista/veículo responsável por levar <strong>{solicitacao.nome}</strong> até <strong>{solicitacao.destino || "o destino"}</strong>. O status será atualizado para "Agendado".</p>
+      <Field label="Motorista / veículo responsável" required>
+        <select value={motoristaId} onChange={e=>setMotoristaId(e.target.value)}>
+          <option value="">Selecione</option>
+          {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
+        </select>
+      </Field>
+      <div className="actions-row">
+        <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" disabled={!motoristaId} onClick={()=>onConfirm(motoristaId)}>Confirmar</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, motoristas = [], solicitacoes = [], listas }){
+  const listaDestinos = (listas && listas.destinos) || DESTINOS_PADRAO;
+  const listaMotivos = (listas && listas.motivos) || MOTIVOS_PADRAO;
+  const listaLocais = (listas && listas.locais) || LOCAIS_PADRAO;
+  const [form, setForm] = useState(editTarget || blankSolicitacao());
+  useEffect(()=>{ setForm(editTarget || blankSolicitacao()); }, [editTarget]);
+  const set = (k) => (e) => setForm(f => ({...f, [k]: e.target.value}));
+  const setCpf = (e) => setForm(f => ({...f, cpf: maskCpfCns(e.target.value)}));
+  const setTelefone = (e) => setForm(f => ({...f, telefone: maskPhone(e.target.value)}));
+
+  const [buscaPaciente, setBuscaPaciente] = useState("");
+
+  // Lista de pacientes já cadastrados (um por CPF/CNS), com dados pessoais mais recentes e total de viagens.
+  const pacientesConhecidos = useMemo(() => {
+    const map = new Map();
+    solicitacoes.forEach(p => {
+      const chave = onlyDigits(p.cpf || "");
+      if(!chave) return;
+      const atual = map.get(chave);
+      if(!atual || (p.createdAt||0) > (atual.createdAt||0)){
+        map.set(chave, p);
+      }
+    });
+    return Array.from(map.entries()).map(([chave, p]) => ({
+      chave,
+      nome: p.nome, cpf: p.cpf, nascimento: p.nascimento, sexo: p.sexo,
+      telefone: p.telefone, endereco: p.endereco,
+      totalViagens: solicitacoes.filter(s => onlyDigits(s.cpf||"") === chave).length
+    }));
+  }, [solicitacoes]);
+
+  const sugestoes = useMemo(() => {
+    const t = buscaPaciente.trim().toLowerCase();
+    if(!t) return [];
+    const tDigits = onlyDigits(buscaPaciente);
+    return pacientesConhecidos.filter(p =>
+      p.nome.toLowerCase().includes(t) || (tDigits && p.chave.includes(tDigits))
+    ).slice(0, 6);
+  }, [buscaPaciente, pacientesConhecidos]);
+
+  const usarPacienteExistente = (p) => {
+    setForm(f => ({
+      ...blankSolicitacao(),
+      nome: p.nome, cpf: p.cpf, nascimento: p.nascimento, sexo: p.sexo,
+      telefone: p.telefone, endereco: p.endereco
+    }));
+    setBuscaPaciente("");
+    notify(`Dados de ${p.nome} preenchidos. Complete os dados da nova viagem.`);
+  };
+
+  const handleSubmit = async () => {
+    if(!form.tipoAgendamento || !form.nome || !form.cpf || !form.nascimento || !form.telefone || !form.destino || !form.dataViagem){
+      notify("Preencha os campos obrigatórios (*)");
+      return;
+    }
+    const cpfDigits = onlyDigits(form.cpf);
+    if(cpfDigits.length === 11){
+      if(!isValidCPF(cpfDigits)){ notify("CPF inválido. Verifique os números digitados."); return; }
+    } else if(cpfDigits.length !== 15){
+      notify("CPF ou CNS inválido. CPF deve ter 11 dígitos e CNS 15 dígitos.");
+      return;
+    }
+    const phoneDigits = onlyDigits(form.telefone);
+    if(phoneDigits.length < 10 || phoneDigits.length > 11){
+      notify("Telefone inválido. Informe DDD + número.");
+      return;
+    }
+
+    await save(form);
+    notify(editTarget ? "Solicitação atualizada" : "Solicitação de transporte cadastrada");
+    setForm(blankSolicitacao());
+    if(onDone) onDone();
+  };
+
+  return <div className="card">
+    {!editTarget && (
+      <>
+        <div className="section-title">Paciente já atendido anteriormente?</div>
+        <div className="grid grid-2" style={{marginBottom:16}}>
+          <Field label="Buscar paciente cadastrado por nome ou CPF/CNS">
+            <input placeholder="Digite o nome ou CPF/CNS do paciente..." value={buscaPaciente} onChange={e=>setBuscaPaciente(e.target.value)} />
+          </Field>
+        </div>
+        {sugestoes.length > 0 && (
+          <div style={{marginTop:-8, marginBottom:20, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden'}}>
+            {sugestoes.map(p => (
+              <div key={p.chave} onClick={()=>usarPacienteExistente(p)}
+                style={{padding:'11px 14px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--border)', background:'var(--panel)'}}
+                onMouseEnter={e=>e.currentTarget.style.background='var(--accent-soft)'}
+                onMouseLeave={e=>e.currentTarget.style.background='var(--panel)'}>
+                <span><strong>{p.nome}</strong> <span style={{color:'var(--muted)', fontSize:13}}>— {p.cpf}</span></span>
+                <span style={{fontSize:12, color:'var(--muted)'}}>{p.totalViagens} viage{p.totalViagens!==1?"ns":"m"} anterior{p.totalViagens!==1?"es":""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    )}
+
+    <div className="section-title">Tipo de agendamento</div>
+    <div className="grid grid-2">
+      <Field label="O agendamento é normal ou excepcional?" required>
+        <select value={form.tipoAgendamento} onChange={set('tipoAgendamento')}>
+          <option value="">Selecione</option>
+          {TIPOS_AGENDAMENTO.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+    </div>
+
+    <div className="section-title">Dados do paciente</div>
+    <div className="grid grid-2">
+      <Field label="Nome completo" required><input placeholder="Nome completo do paciente" value={form.nome} onChange={set('nome')} /></Field>
+      <Field label="CPF / CNS" required><input placeholder="000.000.000-00" value={form.cpf} onChange={setCpf} maxLength={20} /></Field>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Data de nascimento" required><input type="date" value={form.nascimento} onChange={set('nascimento')} /></Field>
+      <Field label="Sexo">
+        <select value={form.sexo} onChange={set('sexo')}>
+          <option value="">Selecione</option><option>Feminino</option><option>Masculino</option><option>Outro</option>
+        </select>
+      </Field>
+    </div>
+
+    <div className="section-title">Contato</div>
+    <div className="grid grid-2">
+      <Field label="Telefone" required><input placeholder="(00) 00000-0000" value={form.telefone} onChange={setTelefone} maxLength={15} /></Field>
+      <Field label="Endereço"><input placeholder="Rua, número, bairro, cidade" value={form.endereco} onChange={set('endereco')} /></Field>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Ponto de referência"><input placeholder="Ex: perto da praça, próximo ao mercado..." value={form.pontoReferencia} onChange={set('pontoReferencia')} /></Field>
+    </div>
+
+    <div className="section-title">Dados da viagem</div>
+    <div className="grid grid-2">
+      <Field label="Destino" required>
+        <select value={form.destino} onChange={set('destino')}>
+          <option value="">Selecione</option>
+          {listaDestinos.map(d => <option key={d}>{d}</option>)}
+        </select>
+      </Field>
+      <Field label="Motivo / especialidade">
+        <select value={form.motivo} onChange={set('motivo')}>
+          <option value="">Selecione</option>
+          {listaMotivos.map(m => <option key={m}>{m}</option>)}
+        </select>
+      </Field>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Local">
+        <select value={form.local} onChange={set('local')}>
+          <option value="">Selecione</option>
+          {listaLocais.map(l => <option key={l}>{l}</option>)}
+        </select>
+      </Field>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Data da viagem / consulta" required><input type="date" value={form.dataViagem} onChange={set('dataViagem')} /></Field>
+      <Field label="Horário de saída"><input type="time" value={form.horarioSaida} onChange={set('horarioSaida')} /></Field>
+    </div>
+    <div className="grid grid-3" style={{marginTop:16}}>
+      <Field label="Tipo de veículo">
+        <select value={form.tipoTransporte} onChange={set('tipoTransporte')}>
+          <option value="">Selecione</option>
+          {VEICULOS.map(v => <option key={v}>{v}</option>)}
+        </select>
+      </Field>
+      <Field label="Necessita acompanhante?">
+        <select value={form.acompanhante} onChange={set('acompanhante')}>
+          <option>Não</option><option>Sim</option>
+        </select>
+      </Field>
+      {form.acompanhante === "Sim" && (
+        <Field label="Nome do acompanhante"><input placeholder="Nome completo" value={form.nomeAcompanhante} onChange={set('nomeAcompanhante')} /></Field>
+      )}
+    </div>
+
+    <div className="grid grid-3" style={{marginTop:16}}>
+      <Field label="Status">
+        <select value={form.status} onChange={set('status')}>
+          <option>Agendado</option><option>Lista de espera</option>
+        </select>
+      </Field>
+      {form.status === "Agendado" && (
+        <Field label="Motorista / veículo responsável">
+          <select value={form.motoristaId} onChange={set('motoristaId')}>
+            <option value="">Selecione</option>
+            {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Agendado por"><input placeholder="Nome de quem realizou o agendamento" value={form.agendadoPor} onChange={set('agendadoPor')} /></Field>
+    </div>
+
+    <div className="section-title">Conclusão da viagem</div>
+    <div className="grid grid-2">
+      <Field label="Resultado da viagem">
+        <select value={form.resultadoViagem} onChange={set('resultadoViagem')}>
+          <option value="">Selecione</option>
+          {RESULTADOS_VIAGEM.map(r => <option key={r}>{r}</option>)}
+        </select>
+      </Field>
+      <Field label="Data de realização"><input type="date" value={form.dataRealizacao} onChange={set('dataRealizacao')} /></Field>
+    </div>
+
+    <div className="grid" style={{marginTop:16}}>
+      <Field label="Observações gerais"><textarea placeholder="Informações relevantes: necessidade de cadeira de rodas, maca, restrições, etc." value={form.obs} onChange={set('obs')} /></Field>
+    </div>
+
+    <div className="actions-row">
+      <button className="btn btn-primary" onClick={handleSubmit}>{editTarget ? "Salvar alterações" : "Cadastrar solicitação"}</button>
+      {editTarget && <button className="btn btn-secondary" onClick={onDone}>Cancelar edição</button>}
+      {editTarget && <button className="btn btn-danger" onClick={()=>onRequestDelete(editTarget)}><IconTrash/> Excluir solicitação</button>}
+    </div>
+  </div>;
+}
+
+function StatusBadge({ status }){
+  const cls = (status === "Ativo" || status === "Agendado" || status === "Realizada") ? "badge-ativo"
+    : status === "Em pausa" ? "badge-pausa"
+    : status === "Lista de espera" ? "badge-espera"
+    : "badge-inativo";
+  return <span className={"badge " + cls}>{status}</span>;
+}
+
+function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas }){
+  const [q, setQ] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fDestino, setFDestino] = useState("");
+  const [fDataViagem, setFDataViagem] = useState("");
+
+  const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+  const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.destino)), [solicitacoes]);
+  const motoristaName = (id) => { const m = (motoristas||[]).find(x=>x.id===id); return m ? m.nome : "—"; };
+
+  const filtered = useMemo(() => {
+    const t = q.toLowerCase();
+    return solicitacoes.filter(p =>
+      (p.nome||"").toLowerCase().includes(t) &&
+      (!fStatus || p.status === fStatus) &&
+      (!fDestino || p.destino === fDestino) &&
+      (!fDataViagem || p.dataViagem === fDataViagem)
+    );
+  }, [solicitacoes, q, fStatus, fDestino, fDataViagem]);
+
+  const hasFilters = fStatus || fDestino || fDataViagem;
+  const clearAll = () => { setFStatus(""); setFDestino(""); setFDataViagem(""); };
+
+  return <div className="card">
+    <div className="toolbar">
+      <input placeholder="Buscar por nome..." value={q} onChange={e=>setQ(e.target.value)} />
+      <select style={{maxWidth:160}} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
+        <option value="">Status (todos)</option>
+        <option>Agendado</option><option>Lista de espera</option>
+      </select>
+      <select style={{maxWidth:180}} value={fDestino} onChange={e=>setFDestino(e.target.value)}>
+        <option value="">Destino (todos)</option>
+        {destinoOptions.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input type="date" style={{maxWidth:170}} value={fDataViagem} onChange={e=>setFDataViagem(e.target.value)} title="Filtrar por data da viagem" />
+      {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
+      <span className="count-pill">{filtered.length} solicitaç{filtered.length!==1?"ões":"ão"}</span>
+    </div>
+    {loading ? <div className="loading">Carregando...</div> :
+    filtered.length === 0 ? (
+      <div className="empty-state">
+        <IconVan/>
+        <div>Nenhuma solicitação encontrada. Use "Nova solicitação" para começar.</div>
+      </div>
+    ) : (
+      <table>
+        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Data da viagem</th><th>Destino</th><th>Local</th><th>Motorista</th><th>Status</th><th>Desfecho da viagem</th><th></th></tr></thead>
+        <tbody>
+          {filtered.map(p => (
+            <tr key={p.id}>
+              <td>{p.nome}</td>
+              <td>{p.nascimento ? new Date(p.nascimento+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
+              <td>{p.telefone || "—"}</td>
+              <td>{p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
+              <td>{p.destino || "—"}</td>
+              <td>{p.local || "—"}</td>
+              <td>{p.status === "Agendado" ? motoristaName(p.motoristaId) : "—"}</td>
+              <td><StatusBadge status={p.status}/></td>
+              <td>{p.resultadoViagem || "—"}</td>
+              <td>
+                <div className="row-actions">
+                  <button className="icon-btn" onClick={()=>onEdit(p)}><IconEdit/></button>
+                  <button className="icon-btn danger" onClick={()=>onDelete(p)}><IconTrash/></button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>;
+}
+
+function MotoristasTab({ motoristas, loading, save, remove, notify, solicitacoes = [] }){
+  const [form, setForm] = useState(blankMotorista());
+  const [editing, setEditing] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [fVeiculo, setFVeiculo] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const set = (k) => (e) => setForm(f => ({...f, [k]: e.target.value}));
+
+  const workload = useMemo(() => {
+    const map = {};
+    solicitacoes.forEach(p => {
+      if(p.status === "Agendado" && p.motoristaId){
+        map[p.motoristaId] = (map[p.motoristaId] || 0) + 1;
+      }
+    });
+    return map;
+  }, [solicitacoes]);
+  const maxWorkload = Math.max(1, ...Object.values(workload));
+
+  const filtered = useMemo(() => motoristas.filter(p =>
+    (!fVeiculo || p.tipoVeiculo === fVeiculo) &&
+    (!fStatus || p.status === fStatus)
+  ), [motoristas, fVeiculo, fStatus]);
+  const hasFilters = fVeiculo || fStatus;
+  const clearAll = () => { setFVeiculo(""); setFStatus(""); };
+
+  const submit = async () => {
+    if(!form.nome || !form.tipoVeiculo){ notify("Preencha nome e tipo de veículo"); return; }
+    await save(form);
+    notify(editing ? "Motorista atualizado" : "Motorista cadastrado");
+    setForm(blankMotorista()); setEditing(null);
+  };
+
+  return <div>
+    <div className="card" style={{marginBottom:20}}>
+      <div className="section-title">{editing ? "Editar motorista / veículo" : "Novo motorista / veículo"}</div>
+      <div className="grid grid-2">
+        <Field label="Nome do motorista" required><input value={form.nome} onChange={set('nome')} placeholder="Nome completo"/></Field>
+        <Field label="Tipo de veículo" required>
+          <select value={form.tipoVeiculo} onChange={set('tipoVeiculo')}>
+            <option value="">Selecione</option>
+            {VEICULOS.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="grid grid-3" style={{marginTop:16}}>
+        <Field label="CNH / Registro"><input value={form.cnh} onChange={set('cnh')} placeholder="Número da CNH"/></Field>
+        <Field label="Placa do veículo"><input value={form.placa} onChange={set('placa')} placeholder="AAA-0A00"/></Field>
+        <Field label="Telefone"><input value={form.telefone} onChange={set('telefone')} placeholder="(00) 00000-0000"/></Field>
+      </div>
+      <div className="actions-row">
+        <button className="btn btn-primary" onClick={submit}>{editing ? "Salvar alterações" : "Cadastrar motorista"}</button>
+        {editing && <button className="btn btn-secondary" onClick={()=>{setEditing(null); setForm(blankMotorista());}}>Cancelar</button>}
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="toolbar">
+        <select style={{maxWidth:220}} value={fVeiculo} onChange={e=>setFVeiculo(e.target.value)}>
+          <option value="">Veículo (todos)</option>
+          {VEICULOS.map(v => <option key={v}>{v}</option>)}
+        </select>
+        <select style={{maxWidth:160}} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
+          <option value="">Status (todos)</option>
+          <option>Ativo</option><option>Em manutenção</option><option>Inativo</option>
+        </select>
+        {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
+        <span className="count-pill">{filtered.length} motorista{filtered.length!==1?"s":""}</span>
+      </div>
+      {loading ? <div className="loading">Carregando...</div> :
+      filtered.length === 0 ? <div className="empty-state"><IconVan/><div>Nenhum motorista encontrado.</div></div> :
+      <table>
+        <thead><tr><th>Nome</th><th>Veículo</th><th>Placa</th><th>Contato</th><th>Viagens agendadas</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {filtered.map(p => (
+            <tr key={p.id}>
+              <td>{p.nome}</td><td>{p.tipoVeiculo}</td><td>{p.placa||"—"}</td>
+              <td>{p.telefone || "—"}</td>
+              <td>
+                <div style={{display:'flex', alignItems:'center', gap:10}}>
+                  <div style={{width:70, height:8, background:'#e2e8f0', borderRadius:99, overflow:'hidden'}}>
+                    <div style={{width:`${Math.round(((workload[p.id]||0)/maxWorkload)*100)}%`, height:'100%', background:'#6366f1', borderRadius:99}}/>
+                  </div>
+                  <span style={{fontWeight:700, color: workload[p.id] ? '#6366f1' : 'var(--muted)'}}>{workload[p.id] || 0}</span>
+                </div>
+              </td>
+              <td><StatusBadge status={p.status}/></td>
+              <td><div className="row-actions">
+                <button className="icon-btn" onClick={()=>{setEditing(p); setForm(p);}}><IconEdit/></button>
+                <button className="icon-btn danger" onClick={()=>setConfirmDel(p)}><IconTrash/></button>
+              </div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>}
+    </div>
+    {confirmDel && <ConfirmModal title="Excluir motorista"
+      text={`Tem certeza que deseja excluir "${confirmDel.nome}"? Essa ação não pode ser desfeita.`}
+      onCancel={()=>setConfirmDel(null)}
+      onConfirm={async ()=>{ await remove(confirmDel.id); notify("Motorista excluído"); setConfirmDel(null); }} />}
+  </div>;
+}
+
+function toCSV(rows, headers){
+  const esc = (v) => `"${String(v??"").replace(/"/g,'""')}"`;
+  const lines = [headers.map(h=>esc(h.label)).join(",")];
+  rows.forEach(r => lines.push(headers.map(h=>esc(r[h.key])).join(",")));
+  return lines.join("\n");
+}
+
+function downloadCSV(filename, csv){
+  const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function JsonViewerModal({ solicitacoes, motoristas, onClose, notify }){
+  const data = { solicitacoes, motoristas };
+  const json = JSON.stringify(data, null, 2);
+  const copy = async () => {
+    try{ await navigator.clipboard.writeText(json); notify("JSON copiado para a área de transferência"); }
+    catch(e){ notify("Não foi possível copiar automaticamente. Selecione o texto manualmente."); }
+  };
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" style={{maxWidth:760, maxHeight:'85vh', display:'flex', flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+      <h3>Dados brutos (JSON)</h3>
+      <p>{solicitacoes.length} solicitação(ões) · {motoristas.length} motorista(s)</p>
+      <pre style={{
+        background:'var(--panel2)', border:'1px solid var(--border)', borderRadius:9,
+        padding:16, fontSize:12.5, lineHeight:1.5, overflow:'auto', flex:1,
+        whiteSpace:'pre', color:'var(--text)', fontFamily:'ui-monospace, Menlo, monospace'
+      }}>{json}</pre>
+      <div className="actions-row">
+        <button className="btn btn-secondary" onClick={onClose}>Fechar</button>
+        <button className="btn btn-primary" onClick={copy}>Copiar JSON</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function ExportTab({ solicitacoes, motoristas, notify }){
+  const [showJson, setShowJson] = useState(false);
+  const exportSolicitacoes = () => {
+    const motoristaName = (id) => { const m = motoristas.find(x=>x.id===id); return m ? m.nome : ""; };
+    const rows = solicitacoes.map(p => ({...p, motoristaNome: motoristaName(p.motoristaId)}));
+    const headers = [
+      {key:'nome',label:'Nome'},{key:'cpf',label:'CPF/CNS'},{key:'nascimento',label:'Nascimento'},
+      {key:'sexo',label:'Sexo'},{key:'telefone',label:'Telefone'},
+      {key:'endereco',label:'Endereço'},{key:'pontoReferencia',label:'Ponto de referência'},{key:'unidade',label:'Unidade de origem'},
+      {key:'destino',label:'Destino'},{key:'motivo',label:'Motivo'},
+      {key:'dataViagem',label:'Data da viagem'},{key:'horarioSaida',label:'Horário de saída'},
+      {key:'tipoTransporte',label:'Tipo de veículo'},{key:'acompanhante',label:'Acompanhante'},
+      {key:'nomeAcompanhante',label:'Nome do acompanhante'},{key:'prioridade',label:'Prioridade'},
+      {key:'status',label:'Status'},{key:'motoristaNome',label:'Motorista'},{key:'agendadoPor',label:'Agendado por'},
+      {key:'resultadoViagem',label:'Resultado da viagem'},{key:'dataRealizacao',label:'Data de realização'},
+      {key:'obs',label:'Observações'}
+    ];
+    downloadCSV("solicitacoes-tfd.csv", toCSV(rows, headers));
+    notify("Exportação de solicitações baixada");
+  };
+  const exportMotoristas = () => {
+    const headers = [{key:'nome',label:'Nome'},{key:'tipoVeiculo',label:'Tipo de veículo'},{key:'placa',label:'Placa'},{key:'cnh',label:'CNH'},{key:'telefone',label:'Telefone'},{key:'status',label:'Status'}];
+    downloadCSV("motoristas.csv", toCSV(motoristas, headers));
+    notify("Exportação de motoristas baixada");
+  };
+
+  return <div className="card">
+    <div className="section-title">Exportar dados (CSV)</div>
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:20}}>Baixe os dados atuais em formato CSV, compatível com Excel e Google Planilhas.</p>
+    <div className="grid grid-2">
+      <button className="btn btn-secondary" onClick={exportSolicitacoes}>Exportar solicitações ({solicitacoes.length})</button>
+      <button className="btn btn-secondary" onClick={exportMotoristas}>Exportar motoristas ({motoristas.length})</button>
+    </div>
+
+    <div className="section-title">Dados brutos</div>
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:20}}>Visualize todo o banco de dados em formato JSON, direto na tela.</p>
+    <button className="btn btn-secondary" onClick={()=>setShowJson(true)}>Abrir dados em JSON</button>
+
+    {showJson && <JsonViewerModal solicitacoes={solicitacoes} motoristas={motoristas} onClose={()=>setShowJson(false)} notify={notify} />}
+  </div>;
+}
+
+function WaitingListTab({ solicitacoes, loading, onEdit, motoristas = [], save, notify }){
+  const [q, setQ] = useState("");
+  const [quickSolicitacao, setQuickSolicitacao] = useState(null);
+  const waiting = useMemo(() => solicitacoes.filter(p => p.status === "Lista de espera"), [solicitacoes]);
+
+  const PRIORIDADE_ORDEM = { "Alta": 0, "Moderada": 1, "Leve": 2, "": 3 };
+  const sortByPriority = (list) => [...list].sort((a, b) => {
+    const pa = PRIORIDADE_ORDEM[a.prioridade || ""] ?? 3;
+    const pb = PRIORIDADE_ORDEM[b.prioridade || ""] ?? 3;
+    if(pa !== pb) return pa - pb;
+    const da = a.dataViagem ? new Date(a.dataViagem+"T00:00").getTime() : Infinity;
+    const db = b.dataViagem ? new Date(b.dataViagem+"T00:00").getTime() : Infinity;
+    return da - db;
+  });
+
+  const filtered = useMemo(() => {
+    const t = q.toLowerCase();
+    const base = waiting.filter(p =>
+      (p.nome||"").toLowerCase().includes(t) ||
+      (p.destino||"").toLowerCase().includes(t)
+    );
+    return sortByPriority(base);
+  }, [waiting, q]);
+
+  const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+  const calcIdade = (nasc) => {
+    if(!nasc) return "—";
+    const diff = Date.now() - new Date(nasc+"T00:00").getTime();
+    return Math.floor(diff / (365.25*24*3600*1000)) + " anos";
+  };
+  const diasEspera = (dataViagem) => {
+    if(!dataViagem) return "—";
+    const diff = Date.now() - new Date(dataViagem+"T00:00").getTime();
+    return Math.floor(diff / (24*3600*1000)) + " dias";
+  };
+  const prioridadeBadge = (p) => {
+    if(!p) return <span style={{color:'var(--muted)'}}>—</span>;
+    const cls = p === "Alta" ? "badge-inativo" : p === "Moderada" ? "badge-pausa" : "badge-ativo";
+    return <span className={"badge " + cls}>{p}</span>;
+  };
+
+  const byDestino = useMemo(() => {
+    const map = {};
+    waiting.forEach(p => {
+      const d = p.destino || "Não informado";
+      map[d] = (map[d]||0) + 1;
+    });
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  }, [waiting]);
+
+  return <div>
+    <div className="stat-grid">
+      <div className="stat-card blue">
+        <div className="stat-num">{waiting.length}</div>
+        <div className="stat-label">Total em lista de espera</div>
+      </div>
+      <div className="stat-card green">
+        <div className="stat-num">{solicitacoes.filter(p=>p.status==="Agendado").length}</div>
+        <div className="stat-label">Viagens agendadas</div>
+      </div>
+    </div>
+
+    {byDestino.length > 0 && <div className="card" style={{marginBottom:16}}>
+      <div className="section-title">Lista de espera por destino</div>
+      <table>
+        <thead><tr><th>Destino</th><th>Pacientes aguardando</th></tr></thead>
+        <tbody>
+          {byDestino.map(([d, n]) => (
+            <tr key={d}>
+              <td>{d}</td>
+              <td>
+                <div style={{display:'flex', alignItems:'center', gap:10}}>
+                  <div style={{flex:1, maxWidth:200, height:8, background:'#e2e8f0', borderRadius:99, overflow:'hidden'}}>
+                    <div style={{width:`${Math.round((n/waiting.length)*100)}%`, height:'100%', background:'#6366f1', borderRadius:99}}/>
+                  </div>
+                  <span style={{fontWeight:700, color:'#6366f1'}}>{n}</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>}
+
+    <div className="card">
+      <div className="toolbar">
+        <input placeholder="Buscar por nome ou destino..." value={q} onChange={e=>setQ(e.target.value)} />
+        <span className="count-pill" style={{background:'#f0f0ff', color:'#6366f1', border:'1px solid #c7d2fe'}}>
+          {filtered.length} paciente{filtered.length!==1?"s":""} em espera
+        </span>
+      </div>
+      {loading ? <div className="loading">Carregando...</div> :
+      waiting.length === 0
+        ? <div className="empty-state">
+            <IconVan/>
+            <div>Nenhum paciente em lista de espera.</div>
+            <div style={{fontSize:12, marginTop:6}}>Para adicionar, vá em "Nova solicitação" e selecione o status "Lista de espera".</div>
+          </div>
+        : filtered.length === 0
+          ? <div className="empty-state"><IconVan/><div>Nenhum resultado para a busca.</div></div>
+          : <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Nome</th>
+                  <th>Idade</th>
+                  <th>Telefone</th>
+                  <th>Destino</th>
+                  <th>Prioridade</th>
+                  <th>Data da Viagem</th>
+                  <th>Tempo de espera</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p, i) => (
+                  <tr key={p.id}>
+                    <td style={{color:'var(--muted)', fontWeight:700}}>{i+1}</td>
+                    <td style={{fontWeight:600}}>{p.nome}</td>
+                    <td>{calcIdade(p.nascimento)}</td>
+                    <td>{p.telefone || "—"}</td>
+                    <td>{p.destino || "—"}</td>
+                    <td>{prioridadeBadge(p.prioridade)}</td>
+                    <td>{fmt(p.dataViagem)}</td>
+                    <td>
+                      <span style={{
+                        fontWeight:700,
+                        color: !p.dataViagem ? 'var(--muted)'
+                          : Math.floor((Date.now()-new Date(p.dataViagem+"T00:00"))/(24*3600*1000)) > 90 ? 'var(--danger)'
+                          : Math.floor((Date.now()-new Date(p.dataViagem+"T00:00"))/(24*3600*1000)) > 30 ? 'var(--warn)'
+                          : 'var(--ok)'
+                      }}>
+                        {diasEspera(p.dataViagem)}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" title="Confirmar viagem" onClick={()=>setQuickSolicitacao(p)}><IconCheck/></button>
+                        <button className="icon-btn" title="Editar solicitação" onClick={()=>onEdit(p)}><IconEdit/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+      }
+    </div>
+    {quickSolicitacao && <QuickScheduleModal solicitacao={quickSolicitacao} motoristas={motoristas}
+      onCancel={()=>setQuickSolicitacao(null)}
+      onConfirm={async (motoristaId)=>{
+        await save({...quickSolicitacao, status:"Agendado", motoristaId: motoristaId});
+        notify(`Viagem de ${quickSolicitacao.nome} confirmada`);
+        setQuickSolicitacao(null);
+      }} />}
+  </div>;
+}
+
+function ListaEditor({ titulo, itens, onChange }){
+  const [novo, setNovo] = useState("");
+  const [editIdx, setEditIdx] = useState(-1);
+  const [editValor, setEditValor] = useState("");
+
+  const adicionar = () => {
+    const v = novo.trim();
+    if(!v) return;
+    if(itens.some(i => i.toLowerCase() === v.toLowerCase())) return;
+    onChange([...itens, v]);
+    setNovo("");
+  };
+
+  const iniciarEdicao = (idx) => { setEditIdx(idx); setEditValor(itens[idx]); };
+  const salvarEdicao = () => {
+    const v = editValor.trim();
+    if(!v){ setEditIdx(-1); return; }
+    onChange(itens.map((it,i)=> i===editIdx ? v : it));
+    setEditIdx(-1);
+  };
+  const cancelarEdicao = () => setEditIdx(-1);
+  const remover = (idx) => onChange(itens.filter((_,i)=>i!==idx));
+
+  return <div className="card" style={{marginBottom:20}}>
+    <div className="section-title">{titulo}</div>
+    <div className="toolbar">
+      <input placeholder={`Adicionar novo item...`} value={novo} onChange={e=>setNovo(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') adicionar(); }} />
+      <button className="btn btn-primary" onClick={adicionar}>Adicionar</button>
+      <span className="count-pill">{itens.length} ite{itens.length!==1?"ns":"m"}</span>
+    </div>
+    {itens.length === 0
+      ? <div className="empty-state" style={{padding:'24px 20px'}}><div>Nenhum item cadastrado ainda.</div></div>
+      : <table>
+          <tbody>
+            {itens.map((it, idx) => (
+              <tr key={idx}>
+                <td>
+                  {editIdx === idx
+                    ? <input value={editValor} onChange={e=>setEditValor(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') salvarEdicao(); if(e.key==='Escape') cancelarEdicao(); }} autoFocus />
+                    : it}
+                </td>
+                <td style={{width:1}}>
+                  <div className="row-actions">
+                    {editIdx === idx
+                      ? <button className="icon-btn" title="Salvar" onClick={salvarEdicao}><IconCheck/></button>
+                      : <button className="icon-btn" title="Editar" onClick={()=>iniciarEdicao(idx)}><IconEdit/></button>}
+                    <button className="icon-btn danger" title="Remover" onClick={()=>remover(idx)}><IconTrash/></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+    }
+  </div>;
+}
+
+function ListasTab({ listas, salvar, loading }){
+  if(loading) return <div className="loading">Carregando...</div>;
+  return <div>
+    <ListaEditor titulo="Destino" itens={listas.destinos || []} onChange={(novo)=>salvar({...listas, destinos:novo})} />
+    <ListaEditor titulo="Motivo / especialidade" itens={listas.motivos || []} onChange={(novo)=>salvar({...listas, motivos:novo})} />
+    <ListaEditor titulo="Local" itens={listas.locais || []} onChange={(novo)=>salvar({...listas, locais:novo})} />
+  </div>;
+}
+
+function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
+  const [motoristaId, setMotoristaId] = useState("");
+  const [tipoAgendamentoFiltro, setTipoAgendamentoFiltro] = useState("");
+  const [dataFiltro, setDataFiltro] = useState("");
+  const [horarioFiltro, setHorarioFiltro] = useState("");
+  const [selecionados, setSelecionados] = useState(new Set());
+
+  useEffect(()=>{ setTipoAgendamentoFiltro(""); setDataFiltro(""); setHorarioFiltro(""); }, [motoristaId]);
+  useEffect(()=>{ setDataFiltro(""); setHorarioFiltro(""); }, [tipoAgendamentoFiltro]);
+  useEffect(()=>{ setHorarioFiltro(""); }, [dataFiltro]);
+
+  const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+
+  const agendadosDoMotorista = useMemo(() => {
+    if(!motoristaId) return [];
+    return solicitacoes.filter(p => p.status === "Agendado" && p.motoristaId === motoristaId);
+  }, [solicitacoes, motoristaId]);
+
+  const porTipo = useMemo(() => {
+    return agendadosDoMotorista.filter(p => !tipoAgendamentoFiltro || p.tipoAgendamento === tipoAgendamentoFiltro);
+  }, [agendadosDoMotorista, tipoAgendamentoFiltro]);
+
+  const datasDisponiveis = useMemo(() => {
+    const set = new Set(porTipo.map(p => p.dataViagem).filter(Boolean));
+    return Array.from(set).sort();
+  }, [porTipo]);
+
+  const porData = useMemo(() => {
+    return porTipo.filter(p => !dataFiltro || p.dataViagem === dataFiltro);
+  }, [porTipo, dataFiltro]);
+
+  const horariosDisponiveis = useMemo(() => {
+    const set = new Set(porData.map(p => p.horarioSaida).filter(Boolean));
+    return Array.from(set).sort();
+  }, [porData]);
+
+  const filtrados = useMemo(() => {
+    return porData
+      .filter(p => !horarioFiltro || p.horarioSaida === horarioFiltro)
+      .sort((a,b) => {
+        const da = a.dataViagem || "";
+        const db = b.dataViagem || "";
+        if(da !== db) return da.localeCompare(db);
+        return (a.horarioSaida||"").localeCompare(b.horarioSaida||"");
+      });
+  }, [porData, horarioFiltro]);
+
+  // Sempre que a lista filtrada muda (troca de motorista/filtros), marca todos por padrão.
+  useEffect(() => {
+    setSelecionados(new Set(filtrados.map(p => p.id)));
+  }, [motoristaId, tipoAgendamentoFiltro, dataFiltro, horarioFiltro, agendadosDoMotorista]);
+
+  const toggleUm = (id) => {
+    setSelecionados(prev => {
+      const next = new Set(prev);
+      if(next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const todosMarcados = filtrados.length > 0 && filtrados.every(p => selecionados.has(p.id));
+  const toggleTodos = () => {
+    setSelecionados(todosMarcados ? new Set() : new Set(filtrados.map(p => p.id)));
+  };
+
+  return <div className="card">
+    <div className="section-title hide-print">Selecionar motorista e filtros</div>
+    <div className="grid grid-2">
+      <Field label="Motorista / veículo">
+        <select value={motoristaId} onChange={e=>setMotoristaId(e.target.value)}>
+          <option value="">Selecione um motorista</option>
+          {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
+        </select>
+      </Field>
+      <Field label="Tipo de agendamento">
+        <select value={tipoAgendamentoFiltro} onChange={e=>setTipoAgendamentoFiltro(e.target.value)} disabled={!motoristaId}>
+          <option value="">Todos os tipos</option>
+          <option>Normal</option>
+          <option>Excepcional</option>
+        </select>
+      </Field>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Data da viagem">
+        <select value={dataFiltro} onChange={e=>setDataFiltro(e.target.value)} disabled={!motoristaId}>
+          <option value="">Todas as datas agendadas</option>
+          {datasDisponiveis.map(d => <option key={d} value={d}>{fmt(d)}</option>)}
+        </select>
+      </Field>
+      <Field label="Horário de saída">
+        <select value={horarioFiltro} onChange={e=>setHorarioFiltro(e.target.value)} disabled={!motoristaId}>
+          <option value="">Todos os horários</option>
+          {horariosDisponiveis.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </Field>
+    </div>
+
+    <div className="actions-row hide-print">
+      <button className="btn btn-primary" disabled={!motoristaId || selecionados.size===0} onClick={()=>window.print()}>
+        <IconPrint/> Imprimir rota selecionada
+      </button>
+      <span className="count-pill">{selecionados.size} de {filtrados.length} paciente{filtrados.length!==1?"s":""} selecionado{selecionados.size!==1?"s":""}</span>
+    </div>
+
+    <div className="section-title hide-print" style={{marginTop:26}}>Prévia da rota</div>
+    {!motoristaId
+      ? <div className="empty-state hide-print"><IconVan/><div>Selecione um motorista para ver a rota.</div></div>
+      : filtrados.length === 0
+        ? <div className="empty-state hide-print"><IconVan/><div>Nenhuma viagem agendada para este motorista com os filtros selecionados.</div></div>
+        : <table>
+            <thead>
+              <tr>
+                <th className="hide-print" style={{width:36}}>
+                  <input type="checkbox" checked={todosMarcados} onChange={toggleTodos} />
+                </th>
+                <th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Ponto de referência</th><th>Data</th><th>Observação</th><th>Acompanhante</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((p, i) => (
+                <tr key={p.id} className={selecionados.has(p.id) ? "" : "hide-print"}>
+                  <td className="hide-print">
+                    <input type="checkbox" checked={selecionados.has(p.id)} onChange={()=>toggleUm(p.id)} />
+                  </td>
+                  <td>{i+1}</td>
+                  <td style={{fontWeight:600}}>{p.nome}</td>
+                  <td>{p.telefone || "—"}</td>
+                  <td>{p.destino || "—"}</td>
+                  <td>{p.local || "—"}</td>
+                  <td>{p.pontoReferencia || "—"}</td>
+                  <td>{fmt(p.dataViagem)}</td>
+                  <td>{p.obs || "—"}</td>
+                  <td>{p.acompanhante === "Sim" ? (p.nomeAcompanhante || "Sim") : "Não"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+    }
+  </div>;
+}
+
+function App(){
+  const [tab, setTab] = useState("cadastro");
+  const [toast, setToast] = useState("");
+  const [editingSolicitacao, setEditingSolicitacao] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const sol = useCollection("tfd_solicitacoes:");
+  const mot = useCollection("tfd_motoristas:");
+  const listasCfg = useListasOpcoes();
+
+  const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2600); };
+
+  const tabs = [
+    {id:"cadastro", label: editingSolicitacao ? "Editando solicitação" : "Nova solicitação", icon:<IconPlus/>},
+    {id:"solicitacoes", label:"Solicitações", icon:<IconSearch/>},
+    {id:"lista-espera", label:`Lista de espera (${sol.items.filter(p=>p.status==="Lista de espera").length})`, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
+    {id:"motoristas", label:"Motoristas / Veículos", icon:<IconVan/>},
+    {id:"imprimir-rota", label:"Imprimir Rota", icon:<IconPrint/>},
+    {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconList/>},
+    {id:"exportar", label:"Exportar", icon:<IconUsers/>},
+  ];
+
+  return <div>
+    <div className="header hide-print">
+      <div className="logo"><IconCarHeader/></div>
+      <div><h1>TRANSPORTE FORA DO DOMICÍLIO (TFD)</h1><p>Agendamento e controle de viagens intermunicipais para tratamento de saúde</p></div>
+    </div>
+
+    <div className="banner hide-print">
+      <span>⚠</span>
+      <span>Versão de transição: dados compartilhados entre a equipe via este link. Trate o acesso como confidencial e não compartilhe fora da equipe.</span>
+    </div>
+
+    <div className="tabs hide-print">
+      {tabs.map(t => (
+        <button key={t.id} className={"tab" + (tab===t.id ? " active" : "")} onClick={()=>{ setTab(t.id); if(t.id!=="cadastro") setEditingSolicitacao(null); }}>
+          {t.icon}{t.label}
+        </button>
+      ))}
+    </div>
+
+    {tab === "cadastro" && (
+      <SolicitacaoForm save={sol.save} notify={notify}
+        motoristas={mot.items}
+        solicitacoes={sol.items}
+        listas={listasCfg.listas}
+        editTarget={editingSolicitacao}
+        onDone={()=>{ setEditingSolicitacao(null); setTab("solicitacoes"); }}
+        onRequestDelete={(p)=>setConfirmDel(p)} />
+    )}
+
+    {tab === "solicitacoes" && (
+      <SolicitacoesList solicitacoes={sol.items} loading={sol.loading}
+        motoristas={mot.items}
+        onEdit={(p)=>{ setEditingSolicitacao(p); setTab("cadastro"); }}
+        onDelete={(p)=>setConfirmDel(p)} />
+    )}
+
+    {tab === "lista-espera" && (
+      <WaitingListTab solicitacoes={sol.items} loading={sol.loading}
+        motoristas={mot.items} save={sol.save} notify={notify}
+        onEdit={(p)=>{ setEditingSolicitacao(p); setTab("cadastro"); }} />
+    )}
+
+    {tab === "motoristas" && (
+      <MotoristasTab motoristas={mot.items} loading={mot.loading} save={mot.save} remove={mot.remove} notify={notify} solicitacoes={sol.items} />
+    )}
+
+    {tab === "imprimir-rota" && (
+      <ImprimirRotaTab motoristas={mot.items} solicitacoes={sol.items} notify={notify} />
+    )}
+
+    {tab === "listas" && (
+      <ListasTab listas={listasCfg.listas} loading={listasCfg.loading} salvar={listasCfg.salvar} />
+    )}
+
+    {tab === "exportar" && (
+      <ExportTab solicitacoes={sol.items} motoristas={mot.items} notify={notify} />
+    )}
+
+    {confirmDel && (() => {
+      const vinculado = confirmDel.status === "Agendado" && confirmDel.motoristaId;
+      const motoristaNome = vinculado ? (mot.items.find(x=>x.id===confirmDel.motoristaId)?.nome || "um motorista") : null;
+      return <ConfirmModal title="Excluir solicitação"
+        text={vinculado
+          ? `Atenção: a viagem de "${confirmDel.nome}" está agendada com ${motoristaNome}. Excluir o cadastro removerá esse vínculo permanentemente e não poderá ser desfeito. Deseja continuar?`
+          : `Tem certeza que deseja excluir a solicitação de "${confirmDel.nome}"? Essa ação não pode ser desfeita.`}
+        onCancel={()=>setConfirmDel(null)}
+        onConfirm={async ()=>{ await sol.remove(confirmDel.id); notify("Solicitação excluída"); setConfirmDel(null); setEditingSolicitacao(null); setTab("solicitacoes"); }} />;
+    })()}
+
+    <Toast message={toast} />
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
+</script>
