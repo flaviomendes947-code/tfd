@@ -1331,6 +1331,9 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
 }
 
 function DashboardTab({ solicitacoes }){
+  const [fDataIni, setFDataIni] = useState("");
+  const [fDataFim, setFDataFim] = useState("");
+
   const DESFECHO_COLORS = {
     "Realizada": "#16a34a",
     "Cancelada pela secretaria": "#d97706",
@@ -1339,21 +1342,31 @@ function DashboardTab({ solicitacoes }){
     "Sem desfecho": "#cbd5e1"
   };
 
+  const filtradas = useMemo(() => {
+    return solicitacoes.filter(p =>
+      (!fDataIni || (p.dataViagem && p.dataViagem >= fDataIni)) &&
+      (!fDataFim || (p.dataViagem && p.dataViagem <= fDataFim))
+    );
+  }, [solicitacoes, fDataIni, fDataFim]);
+
+  const totalAgendadas = useMemo(() => filtradas.filter(p => p.status === "Agendado").length, [filtradas]);
+  const totalEspera = useMemo(() => filtradas.filter(p => p.status === "Lista de espera").length, [filtradas]);
+
   const desfechoData = useMemo(() => {
     const counts = { "Realizada":0, "Cancelada pela secretaria":0, "Cancelada pelo paciente":0, "Paciente faltou":0, "Sem desfecho":0 };
-    solicitacoes.forEach(p => {
+    filtradas.forEach(p => {
       const k = RESULTADOS_VIAGEM.includes(p.resultadoViagem) ? p.resultadoViagem : "Sem desfecho";
       counts[k] = (counts[k] || 0) + 1;
     });
-    const total = solicitacoes.length || 1;
+    const total = filtradas.length || 1;
     return Object.entries(counts)
       .filter(([,v]) => v > 0)
       .map(([label, value]) => ({ label, value, pct: Math.round((value/total)*100) }));
-  }, [solicitacoes]);
+  }, [filtradas]);
 
   const conicGradient = useMemo(() => {
     let acc = 0;
-    const total = solicitacoes.length || 1;
+    const total = filtradas.length || 1;
     const stops = desfechoData.map(d => {
       const start = (acc/total)*360;
       acc += d.value;
@@ -1361,20 +1374,43 @@ function DashboardTab({ solicitacoes }){
       return `${DESFECHO_COLORS[d.label]} ${start}deg ${end}deg`;
     });
     return stops.length ? `conic-gradient(${stops.join(",")})` : "conic-gradient(#e2e8f0 0deg 360deg)";
-  }, [desfechoData, solicitacoes]);
+  }, [desfechoData, filtradas]);
 
   const destinoData = useMemo(() => {
     const counts = {};
-    solicitacoes.forEach(p => { const d = p.destino || "Não informado"; counts[d] = (counts[d]||0) + 1; });
+    filtradas.forEach(p => { const d = p.destino || "Não informado"; counts[d] = (counts[d]||0) + 1; });
     return Object.entries(counts).map(([label,value]) => ({label,value})).sort((a,b)=>b.value-a.value).slice(0,8);
-  }, [solicitacoes]);
+  }, [filtradas]);
   const maxDestino = Math.max(1, ...destinoData.map(d=>d.value));
 
+  const hasFilter = fDataIni || fDataFim;
+
   return <div>
+    <div className="card" style={{marginBottom:16}}>
+      <div className="toolbar" style={{marginBottom:0}}>
+        <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
+          Período: De <input type="date" style={{maxWidth:150}} value={fDataIni} onChange={e=>setFDataIni(e.target.value)} />
+          até <input type="date" style={{maxWidth:150}} value={fDataFim} onChange={e=>setFDataFim(e.target.value)} />
+        </span>
+        {hasFilter && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={()=>{setFDataIni("");setFDataFim("");}}>Limpar período</button>}
+      </div>
+    </div>
+
+    <div className="grid grid-2" style={{marginBottom:16}}>
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:13, color:"var(--muted)", marginBottom:6}}>Viagens agendadas {hasFilter ? "no período" : ""}</div>
+        <div style={{fontSize:36, fontWeight:700, color:"var(--accent)"}}>{totalAgendadas}</div>
+      </div>
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:13, color:"var(--muted)", marginBottom:6}}>Lista de espera {hasFilter ? "no período" : ""}</div>
+        <div style={{fontSize:36, fontWeight:700, color:"var(--warn, #d97706)"}}>{totalEspera}</div>
+      </div>
+    </div>
+
     <div className="grid grid-2" style={{alignItems:"stretch"}}>
       <div className="card">
-        <div className="section-title" style={{marginTop:0}}>Desfecho das viagens</div>
-        {solicitacoes.length === 0 ? (
+        <div className="section-title" style={{marginTop:0}}>Desfecho das viagens {hasFilter ? "(período selecionado)" : ""}</div>
+        {filtradas.length === 0 ? (
           <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
         ) : (
           <div style={{display:"flex", alignItems:"center", gap:28, flexWrap:"wrap"}}>
@@ -1383,7 +1419,7 @@ function DashboardTab({ solicitacoes }){
               flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center"
             }}>
               <div style={{width:100, height:100, borderRadius:"50%", background:"var(--panel)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
-                <div style={{fontSize:22, fontWeight:700}}>{solicitacoes.length}</div>
+                <div style={{fontSize:22, fontWeight:700}}>{filtradas.length}</div>
                 <div style={{fontSize:11, color:"var(--muted)"}}>viagens</div>
               </div>
             </div>
@@ -1401,7 +1437,7 @@ function DashboardTab({ solicitacoes }){
       </div>
 
       <div className="card">
-        <div className="section-title" style={{marginTop:0}}>Viagens por destino</div>
+        <div className="section-title" style={{marginTop:0}}>Viagens por destino {hasFilter ? "(período selecionado)" : ""}</div>
         {destinoData.length === 0 ? (
           <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
         ) : (
