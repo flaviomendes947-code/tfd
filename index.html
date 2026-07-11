@@ -1383,6 +1383,30 @@ function DashboardTab({ solicitacoes }){
   }, [filtradas]);
   const maxDestino = Math.max(1, ...destinoData.map(d=>d.value));
 
+  const localData = useMemo(() => {
+    const counts = {};
+    filtradas.forEach(p => { const d = p.local || "Não informado"; counts[d] = (counts[d]||0) + 1; });
+    return Object.entries(counts).map(([label,value]) => ({label,value})).sort((a,b)=>b.value-a.value).slice(0,8);
+  }, [filtradas]);
+  const maxLocal = Math.max(1, ...localData.map(d=>d.value));
+
+  const mesData = useMemo(() => {
+    const counts = {};
+    filtradas.forEach(p => {
+      if(!p.dataViagem) return;
+      const key = p.dataViagem.slice(0,7); // YYYY-MM
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([key,value]) => {
+        const [y,m] = key.split("-");
+        const label = new Date(Number(y), Number(m)-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'2-digit'});
+        return { key, label, value };
+      })
+      .sort((a,b) => a.key.localeCompare(b.key));
+  }, [filtradas]);
+  const maxMes = Math.max(1, ...mesData.map(d=>d.value));
+
   const hasFilter = fDataIni || fDataFim;
 
   return <div>
@@ -1456,6 +1480,47 @@ function DashboardTab({ solicitacoes }){
           </div>
         )}
       </div>
+    </div>
+
+    <div className="card" style={{marginTop:16}}>
+      <div className="section-title" style={{marginTop:0}}>Viagens por local {hasFilter ? "(período selecionado)" : ""}</div>
+      {localData.length === 0 ? (
+        <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
+      ) : (
+        <div style={{display:"flex", flexDirection:"column", gap:12}}>
+          {localData.map(d => (
+            <div key={d.label}>
+              <div style={{display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4}}>
+                <span>{d.label}</span>
+                <span style={{color:"var(--muted)", fontWeight:600}}>{d.value}</span>
+              </div>
+              <div style={{background:"var(--panel2)", borderRadius:6, height:10, overflow:"hidden"}}>
+                <div style={{width:`${(d.value/maxLocal)*100}%`, height:"100%", background:"#0ea5e9", borderRadius:6}}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <div className="card" style={{marginTop:16}}>
+      <div className="section-title" style={{marginTop:0}}>Viagens por mês {hasFilter ? "(período selecionado)" : ""}</div>
+      {mesData.length === 0 ? (
+        <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
+      ) : (
+        <div style={{display:"flex", alignItems:"flex-end", gap:14, height:200, padding:"10px 4px", overflowX:"auto"}}>
+          {mesData.map(d => (
+            <div key={d.key} style={{display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", height:"100%", minWidth:44}}>
+              <div style={{fontSize:12, fontWeight:600, color:"var(--text)", marginBottom:4}}>{d.value}</div>
+              <div style={{
+                width:28, borderRadius:"6px 6px 0 0", background:"var(--accent)",
+                height:`${Math.max(6,(d.value/maxMes)*140)}px`
+              }}></div>
+              <div style={{fontSize:11, color:"var(--muted)", marginTop:6, textTransform:"capitalize"}}>{d.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   </div>;
 }
