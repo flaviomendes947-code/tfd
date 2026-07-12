@@ -2,6 +2,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <div id="app-root"></div>
 <div id="storage-fallback-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#fef2f2;color:#991b1b;border-bottom:1px solid #fecaca;padding:10px 16px;font:500 13px -apple-system,'Segoe UI',sans-serif;text-align:center;">
   ⚠ Não foi possível conectar ao banco de dados (Supabase). Verifique se SUPABASE_URL e SUPABASE_ANON_KEY estão preenchidos corretamente no início do arquivo e se a tabela "tfd_kv" foi criada.
@@ -702,13 +704,13 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
 
   return <div className="card">
     <div className="stat-row" style={{display:"flex", flexWrap:"wrap", gap:10, marginBottom:16}}>
-      <div className="count-pill">Total: {stats.total}</div>
-      <div className="count-pill">Agendadas: {stats.agendado}</div>
-      <div className="count-pill">Lista de espera: {stats.espera}</div>
-      <div className="count-pill">Realizadas: {stats.realizada}</div>
-      <div className="count-pill">Canceladas (secretaria): {stats.canceladaSecretaria}</div>
-      <div className="count-pill">Canceladas (paciente): {stats.canceladaPaciente}</div>
-      <div className="count-pill">Faltas: {stats.faltou}</div>
+      <div className="count-pill" style={{background:"#eef2ff", color:"#4338ca", border:"1px solid #c7d2fe"}}>Total: {stats.total}</div>
+      <div className="count-pill" style={{background:"#e0f2fe", color:"#0369a1", border:"1px solid #bae6fd"}}>Agendadas: {stats.agendado}</div>
+      <div className="count-pill" style={{background:"#fef9c3", color:"#a16207", border:"1px solid #fde68a"}}>Lista de espera: {stats.espera}</div>
+      <div className="count-pill" style={{background:"#dcfce7", color:"#15803d", border:"1px solid #bbf7d0"}}>Realizadas: {stats.realizada}</div>
+      <div className="count-pill" style={{background:"#ffedd5", color:"#c2410c", border:"1px solid #fed7aa"}}>Canceladas (secretaria): {stats.canceladaSecretaria}</div>
+      <div className="count-pill" style={{background:"#fee2e2", color:"#b91c1c", border:"1px solid #fecaca"}}>Canceladas (paciente): {stats.canceladaPaciente}</div>
+      <div className="count-pill" style={{background:"#f3e8ff", color:"#7e22ce", border:"1px solid #e9d5ff"}}>Faltas: {stats.faltou}</div>
     </div>
     <div className="toolbar">
       <input placeholder="Buscar por nome..." value={q} onChange={e=>setQ(e.target.value)} />
@@ -924,6 +926,11 @@ function JsonViewerModal({ solicitacoes, motoristas, onClose, notify }){
 
 function ExportTab({ solicitacoes, motoristas, notify }){
   const [showJson, setShowJson] = useState(false);
+  const [pdfDataIni, setPdfDataIni] = useState("");
+  const [pdfDataFim, setPdfDataFim] = useState("");
+  const [pdfStatus, setPdfStatus] = useState("");
+  const [pdfDesfecho, setPdfDesfecho] = useState("");
+
   const exportSolicitacoes = () => {
     const motoristaName = (id) => { const m = motoristas.find(x=>x.id===id); return m ? m.nome : ""; };
     const rows = solicitacoes.map(p => ({...p, motoristaNome: motoristaName(p.motoristaId)}));
@@ -948,7 +955,85 @@ function ExportTab({ solicitacoes, motoristas, notify }){
     notify("Exportação de motoristas baixada");
   };
 
+  const fmtBR = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+  const motoristaName = (id) => { const m = motoristas.find(x=>x.id===id); return m ? m.nome : "—"; };
+
+  const pdfFiltradas = useMemo(() => {
+    return solicitacoes.filter(p =>
+      (!pdfDataIni || (p.dataViagem && p.dataViagem >= pdfDataIni)) &&
+      (!pdfDataFim || (p.dataViagem && p.dataViagem <= pdfDataFim)) &&
+      (!pdfStatus || p.status === pdfStatus) &&
+      (!pdfDesfecho || (pdfDesfecho === "Sem desfecho" ? !p.resultadoViagem : p.resultadoViagem === pdfDesfecho))
+    ).sort((a,b) => (a.dataViagem||"").localeCompare(b.dataViagem||""));
+  }, [solicitacoes, pdfDataIni, pdfDataFim, pdfStatus, pdfDesfecho]);
+
+  const gerarPdf = () => {
+    if(!window.jspdf){ notify("Não foi possível carregar o gerador de PDF. Verifique sua conexão."); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    doc.setFontSize(14);
+    doc.text("TRANSPORTE FORA DO DOMICÍLIO (TFD) — Relatório de Solicitações", 14, 15);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    const periodoTxt = (pdfDataIni || pdfDataFim)
+      ? `Período: ${pdfDataIni ? fmtBR(pdfDataIni) : "início"} até ${pdfDataFim ? fmtBR(pdfDataFim) : "hoje"}`
+      : "Período: todos os registros";
+    doc.text(periodoTxt, 14, 21);
+    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 26);
+
+    const total = pdfFiltradas.length;
+    const realizadas = pdfFiltradas.filter(p=>p.resultadoViagem==="Realizada").length;
+    const canceladasSec = pdfFiltradas.filter(p=>p.resultadoViagem==="Cancelada pela secretaria").length;
+    const canceladasPac = pdfFiltradas.filter(p=>p.resultadoViagem==="Cancelada pelo paciente").length;
+    const faltas = pdfFiltradas.filter(p=>p.resultadoViagem==="Paciente faltou").length;
+    doc.setTextColor(0);
+    doc.setFontSize(10);
+    doc.text(`Total: ${total}  |  Realizadas: ${realizadas}  |  Canceladas (secretaria): ${canceladasSec}  |  Canceladas (paciente): ${canceladasPac}  |  Faltas: ${faltas}`, 14, 33);
+
+    doc.autoTable({
+      startY: 38,
+      head: [["Nome", "Destino", "Local", "Data", "Motorista", "Status", "Desfecho"]],
+      body: pdfFiltradas.map(p => [
+        p.nome || "—", p.destino || "—", p.local || "—", fmtBR(p.dataViagem),
+        p.status === "Agendado" ? motoristaName(p.motoristaId) : "—",
+        p.status || "—", p.resultadoViagem || "—"
+      ]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 111, 240] },
+      margin: { left: 14, right: 14 }
+    });
+
+    doc.save(`relatorio-tfd-${new Date().toISOString().slice(0,10)}.pdf`);
+    notify("Relatório em PDF gerado");
+  };
+
   return <div className="card">
+    <div className="section-title" style={{marginTop:0}}>Relatório em PDF</div>
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:16}}>Gere um relatório formatado, ideal para prestar contas à secretaria. Use os filtros abaixo para restringir o período ou o tipo de registro (deixe em branco para incluir tudo).</p>
+    <div className="grid grid-2">
+      <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
+        De <input type="date" style={{maxWidth:150}} value={pdfDataIni} onChange={e=>setPdfDataIni(e.target.value)} />
+        até <input type="date" style={{maxWidth:150}} value={pdfDataFim} onChange={e=>setPdfDataFim(e.target.value)} />
+      </span>
+      <select value={pdfStatus} onChange={e=>setPdfStatus(e.target.value)}>
+        <option value="">Status (todos)</option>
+        <option>Agendado</option><option>Lista de espera</option>
+      </select>
+    </div>
+    <div className="grid grid-2" style={{marginTop:16}}>
+      <select value={pdfDesfecho} onChange={e=>setPdfDesfecho(e.target.value)}>
+        <option value="">Desfecho (todos)</option>
+        {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
+        <option value="Sem desfecho">Sem desfecho</option>
+      </select>
+    </div>
+    <div className="actions-row" style={{marginTop:16}}>
+      <button className="btn btn-primary" onClick={gerarPdf} disabled={pdfFiltradas.length===0}>
+        <IconPrint/> Gerar PDF ({pdfFiltradas.length} registro{pdfFiltradas.length!==1?"s":""})
+      </button>
+    </div>
+
     <div className="section-title">Exportar dados (CSV)</div>
     <p style={{color:'var(--muted)', fontSize:13, marginBottom:20}}>Baixe os dados atuais em formato CSV, compatível com Excel e Google Planilhas.</p>
     <div className="grid grid-2">
@@ -1187,7 +1272,79 @@ function ListasTab({ listas, salvar, loading }){
   </div>;
 }
 
+function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
+  const [data, setData] = useState("");
+  const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+
+  const grupos = useMemo(() => {
+    if(!data) return [];
+    const doDia = solicitacoes.filter(p => p.status === "Agendado" && p.dataViagem === data);
+    return motoristas
+      .map(m => ({
+        motorista: m,
+        pacientes: doDia.filter(p => p.motoristaId === m.id)
+          .sort((a,b)=>(a.horarioSaida||"").localeCompare(b.horarioSaida||""))
+      }))
+      .filter(g => g.pacientes.length > 0);
+  }, [motoristas, solicitacoes, data]);
+
+  const totalPacientes = grupos.reduce((s,g)=>s+g.pacientes.length, 0);
+
+  return <div className="card">
+    <div className="section-title hide-print" style={{marginTop:0}}>Resumo do dia — todos os motoristas</div>
+    <div className="grid grid-2 hide-print">
+      <Field label="Data da viagem">
+        <input type="date" value={data} onChange={e=>setData(e.target.value)} />
+      </Field>
+    </div>
+    <div className="actions-row hide-print">
+      <button className="btn btn-primary" disabled={!data || grupos.length===0} onClick={()=>window.print()}>
+        <IconPrint/> Imprimir resumo do dia
+      </button>
+      {data && <span className="count-pill">{grupos.length} motorista{grupos.length!==1?"s":""} · {totalPacientes} paciente{totalPacientes!==1?"s":""}</span>}
+    </div>
+
+    {!data ? (
+      <div className="empty-state hide-print"><IconVan/><div>Selecione uma data para ver o resumo de todos os motoristas.</div></div>
+    ) : grupos.length === 0 ? (
+      <div className="empty-state hide-print"><IconVan/><div>Nenhuma viagem agendada para esta data.</div></div>
+    ) : (
+      grupos.map((g, idx) => (
+        <div key={g.motorista.id} style={{marginTop: idx===0 ? 20 : 0, pageBreakBefore: idx>0 ? "always" : "auto", breakBefore: idx>0 ? "page" : "auto"}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", borderBottom:"2px solid var(--border-strong, #333)", paddingBottom:8, marginBottom:10, marginTop: idx>0 ? 20 : 0}}>
+            <div>
+              <div style={{fontSize:16, fontWeight:700}}>{g.motorista.nome}</div>
+              <div style={{fontSize:12, color:"var(--muted)"}}>{g.motorista.tipoVeiculo}{g.motorista.placa ? " · " + g.motorista.placa : ""}</div>
+            </div>
+            <div style={{fontSize:13, fontWeight:600}}>{fmt(data)} — {g.pacientes.length} paciente{g.pacientes.length!==1?"s":""}</div>
+          </div>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Horário</th><th>Ponto de referência</th><th>Acompanhante</th></tr>
+            </thead>
+            <tbody>
+              {g.pacientes.map((p,i)=>(
+                <tr key={p.id}>
+                  <td>{i+1}</td>
+                  <td style={{fontWeight:600}}>{p.nome}</td>
+                  <td>{p.telefone || "—"}</td>
+                  <td>{p.destino || "—"}</td>
+                  <td>{p.local || "—"}</td>
+                  <td>{p.horarioSaida || "—"}</td>
+                  <td>{p.pontoReferencia || "—"}</td>
+                  <td>{p.acompanhante === "Sim" ? (p.nomeAcompanhante || "Sim") : "Não"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))
+    )}
+  </div>;
+}
+
 function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
+  const [modo, setModo] = useState("motorista"); // "motorista" | "resumo-dia"
   const [motoristaId, setMotoristaId] = useState("");
   const [tipoAgendamentoFiltro, setTipoAgendamentoFiltro] = useState("");
   const [dataFiltro, setDataFiltro] = useState("");
@@ -1251,7 +1408,18 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
     setSelecionados(todosMarcados ? new Set() : new Set(filtrados.map(p => p.id)));
   };
 
-  return <div className="card">
+  return <div>
+    <div className="card hide-print" style={{marginBottom:16}}>
+      <div className="toolbar" style={{marginBottom:0}}>
+        <button className={modo==="motorista" ? "btn btn-primary" : "btn btn-secondary"} onClick={()=>setModo("motorista")}>Por motorista</button>
+        <button className={modo==="resumo-dia" ? "btn btn-primary" : "btn btn-secondary"} onClick={()=>setModo("resumo-dia")}>Resumo do dia (todos os motoristas)</button>
+      </div>
+    </div>
+
+    {modo === "resumo-dia" ? (
+      <ResumoDiaTodosMotoristas motoristas={motoristas} solicitacoes={solicitacoes} />
+    ) : (
+    <div className="card">
     <div className="section-title hide-print">Selecionar motorista e filtros</div>
     <div className="grid grid-2">
       <Field label="Motorista / veículo">
@@ -1327,6 +1495,77 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
             </tbody>
           </table>
     }
+    </div>
+    )}
+  </div>;
+}
+
+function PatientHistoryTab({ solicitacoes, motoristas }){
+  const [q, setQ] = useState("");
+  const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+  const motoristaName = (id) => { const m = (motoristas||[]).find(x=>x.id===id); return m ? m.nome : "—"; };
+
+  const norm = (s) => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Agrupa por nome + CPF (mesma pessoa pode ter mais de uma solicitação)
+  const pacientes = useMemo(() => {
+    const groups = {};
+    solicitacoes.forEach(p => {
+      const key = norm(p.nome) + "|" + onlyDigits(p.cpf||"");
+      if(!groups[key]) groups[key] = { nome: p.nome, cpf: p.cpf, viagens: [] };
+      groups[key].viagens.push(p);
+    });
+    Object.values(groups).forEach(g => g.viagens.sort((a,b) => (b.dataViagem||"").localeCompare(a.dataViagem||"")));
+    return Object.values(groups).sort((a,b) => (a.nome||"").localeCompare(b.nome||""));
+  }, [solicitacoes]);
+
+  const filtrados = useMemo(() => {
+    if(!q.trim()) return [];
+    const t = norm(q);
+    const tDigits = onlyDigits(q);
+    return pacientes.filter(pac =>
+      norm(pac.nome).includes(t) || (tDigits && onlyDigits(pac.cpf||"").includes(tDigits))
+    );
+  }, [pacientes, q]);
+
+  return <div className="card">
+    <div className="section-title" style={{marginTop:0}}>Histórico do paciente</div>
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:16}}>Busque por nome ou CPF para ver todas as viagens já cadastradas para essa pessoa.</p>
+    <input placeholder="Buscar por nome ou CPF..." value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:20}} />
+
+    {!q.trim() ? (
+      <div className="empty-state"><IconSearch/><div>Digite um nome ou CPF para começar a busca.</div></div>
+    ) : filtrados.length === 0 ? (
+      <div className="empty-state"><IconSearch/><div>Nenhum paciente encontrado com esse nome/CPF.</div></div>
+    ) : (
+      filtrados.map(pac => (
+        <div key={pac.nome + pac.cpf} style={{marginBottom:24}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", borderBottom:"1px solid var(--border, #e5e7eb)", paddingBottom:8, marginBottom:10}}>
+            <div>
+              <div style={{fontSize:16, fontWeight:700}}>{pac.nome}</div>
+              <div style={{fontSize:12, color:"var(--muted)"}}>{pac.cpf ? "CPF/CNS: " + pac.cpf : "CPF/CNS não informado"}</div>
+            </div>
+            <span className="count-pill">{pac.viagens.length} viage{pac.viagens.length!==1?"ns":"m"}</span>
+          </div>
+          <table>
+            <thead><tr><th>Data</th><th>Destino</th><th>Local</th><th>Motivo</th><th>Motorista</th><th>Status</th><th>Desfecho</th></tr></thead>
+            <tbody>
+              {pac.viagens.map(v => (
+                <tr key={v.id}>
+                  <td>{fmt(v.dataViagem)}</td>
+                  <td>{v.destino || "—"}</td>
+                  <td>{v.local || "—"}</td>
+                  <td>{v.motivo || "—"}</td>
+                  <td>{v.status === "Agendado" ? motoristaName(v.motoristaId) : "—"}</td>
+                  <td><StatusBadge status={v.status}/></td>
+                  <td>{v.resultadoViagem || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))
+    )}
   </div>;
 }
 
@@ -1541,10 +1780,10 @@ function App(){
     {id:"dashboard", label:"Dashboard", icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>},
     {id:"cadastro", label: editingSolicitacao ? "Editando solicitação" : "Nova solicitação", icon:<IconPlus/>},
     {id:"solicitacoes", label:"Solicitações", icon:<IconSearch/>},
-    {id:"lista-espera", label:`Lista de espera (${sol.items.filter(p=>p.status==="Lista de espera").length})`, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
     {id:"motoristas", label:"Motoristas / Veículos", icon:<IconVan/>},
     {id:"imprimir-rota", label:"Imprimir Rota", icon:<IconPrint/>},
     {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconList/>},
+    {id:"historico-paciente", label:"Histórico do paciente", icon:<IconSearch/>},
     {id:"exportar", label:"Exportar", icon:<IconUsers/>},
   ];
 
@@ -1589,12 +1828,6 @@ function App(){
         onDelete={(p)=>setConfirmDel(p)} />
     )}
 
-    {tab === "lista-espera" && (
-      <WaitingListTab solicitacoes={sol.items} loading={sol.loading}
-        motoristas={mot.items} save={sol.save} notify={notify}
-        onEdit={(p)=>{ setEditingSolicitacao(p); setTab("cadastro"); }} />
-    )}
-
     {tab === "motoristas" && (
       <MotoristasTab motoristas={mot.items} loading={mot.loading} save={mot.save} remove={mot.remove} notify={notify} solicitacoes={sol.items} />
     )}
@@ -1605,6 +1838,10 @@ function App(){
 
     {tab === "listas" && (
       <ListasTab listas={listasCfg.listas} loading={listasCfg.loading} salvar={listasCfg.salvar} />
+    )}
+
+    {tab === "historico-paciente" && (
+      <PatientHistoryTab solicitacoes={sol.items} motoristas={mot.items} />
     )}
 
     {tab === "exportar" && (
@@ -1628,6 +1865,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
