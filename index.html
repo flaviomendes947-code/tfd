@@ -663,6 +663,16 @@ function StatusBadge({ status }){
   return <span className={"badge " + cls}>{status}</span>;
 }
 
+function desfechoStyle(valor){
+  const map = {
+    "Realizada": {background:"#dcfce7", color:"#15803d", border:"1px solid #bbf7d0"},
+    "Cancelada pela secretaria": {background:"#ffedd5", color:"#c2410c", border:"1px solid #fed7aa"},
+    "Cancelada pelo paciente": {background:"#fee2e2", color:"#b91c1c", border:"1px solid #fecaca"},
+    "Paciente faltou": {background:"#f3e8ff", color:"#7e22ce", border:"1px solid #e9d5ff"},
+  };
+  return map[valor] || {background:"var(--panel2, #f1f5f9)", color:"var(--muted)", border:"1px solid var(--border, #e2e8f0)"};
+}
+
 function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas, save }){
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -761,7 +771,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
                 <select
                   value={p.resultadoViagem || ""}
                   onChange={async (e) => { await save({ ...p, resultadoViagem: e.target.value }); }}
-                  style={{padding:'6px 8px', fontSize:13}}
+                  style={{padding:'6px 8px', fontSize:13, borderRadius:20, fontWeight:600, ...desfechoStyle(p.resultadoViagem)}}
                 >
                   <option value="">—</option>
                   {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
@@ -1726,16 +1736,15 @@ function DashboardTab({ solicitacoes }){
       {localData.length === 0 ? (
         <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
       ) : (
-        <div style={{display:"flex", flexDirection:"column", gap:12}}>
+        <div style={{display:"flex", alignItems:"flex-end", gap:14, height:220, padding:"10px 4px", overflowX:"auto"}}>
           {localData.map(d => (
-            <div key={d.label}>
-              <div style={{display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4}}>
-                <span>{d.label}</span>
-                <span style={{color:"var(--muted)", fontWeight:600}}>{d.value}</span>
-              </div>
-              <div style={{background:"var(--panel2)", borderRadius:6, height:10, overflow:"hidden"}}>
-                <div style={{width:`${(d.value/maxLocal)*100}%`, height:"100%", background:"#0ea5e9", borderRadius:6}}></div>
-              </div>
+            <div key={d.label} style={{display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", height:"100%", minWidth:64}}>
+              <div style={{fontSize:12, fontWeight:600, color:"var(--text)", marginBottom:4}}>{d.value}</div>
+              <div style={{
+                width:36, borderRadius:"6px 6px 0 0", background:"#0ea5e9",
+                height:`${Math.max(6,(d.value/maxLocal)*150)}px`
+              }}></div>
+              <div style={{fontSize:11, color:"var(--muted)", marginTop:6, textAlign:"center", maxWidth:80, wordBreak:"break-word"}}>{d.label}</div>
             </div>
           ))}
         </div>
@@ -1865,6 +1874,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
