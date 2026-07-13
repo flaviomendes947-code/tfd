@@ -328,7 +328,7 @@ const blankSolicitacao = () => ({
   telefone:"", endereco:"",
   unidade:"", destino:"", local:"", enderecoLocal:"", motivo:"",
   dataViagem:"", horarioSaida:"", pontoReferencia:"", pontoReferenciaSaida:"",
-  status:"Agendado", motoristaId:"", tipoTransporte:"", agendadoPor:"", formaAgendamento:"",
+  status:"Agendado", motoristaId:"", tipoTransporte:"", dataAgendamento:"", agendadoPor:"", formaAgendamento:"",
   acompanhante:"Não", nomeAcompanhante:"",
   prioridade:"",
   resultadoViagem:"", dataRealizacao:"",
@@ -484,7 +484,9 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     if(!t) return [];
     const tDigits = onlyDigits(buscaPaciente);
     return pacientesConhecidos.filter(p =>
-      p.nome.toLowerCase().includes(t) || (tDigits && p.chave.includes(tDigits))
+      p.nome.toLowerCase().includes(t) ||
+      (tDigits && p.chave.includes(tDigits)) ||
+      (tDigits && onlyDigits(p.telefone||"").includes(tDigits))
     ).slice(0, 6);
   }, [buscaPaciente, pacientesConhecidos]);
 
@@ -527,8 +529,8 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       <>
         <div className="section-title">Paciente já atendido anteriormente?</div>
         <div className="grid grid-2" style={{marginBottom:16}}>
-          <Field label="Buscar paciente cadastrado por nome ou CPF/CNS">
-            <input placeholder="Digite o nome ou CPF/CNS do paciente..." value={buscaPaciente} onChange={e=>setBuscaPaciente(e.target.value)} />
+          <Field label="Buscar paciente cadastrado por nome, CPF/CNS ou telefone">
+            <input placeholder="Digite o nome, CPF/CNS ou telefone do paciente..." value={buscaPaciente} onChange={e=>setBuscaPaciente(e.target.value)} />
           </Field>
         </div>
         {sugestoes.length > 0 && (
@@ -640,6 +642,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
           </select>
         </Field>
       )}
+      <Field label="Data do agendamento"><input type="date" value={form.dataAgendamento} onChange={set('dataAgendamento')} /></Field>
       <Field label="Agendado por"><input placeholder="Nome de quem realizou o agendamento" value={form.agendadoPor} onChange={set('agendadoPor')} /></Field>
       <Field label="Forma de agendamento">
         <select value={form.formaAgendamento} onChange={set('formaAgendamento')}>
@@ -730,10 +733,6 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
     </div>
     <div className="toolbar">
       <input placeholder="Buscar por nome..." value={q} onChange={e=>setQ(e.target.value)} />
-      <select style={{maxWidth:160}} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
-        <option value="">Status (todos)</option>
-        <option>Agendado</option><option>Lista de espera</option>
-      </select>
       <select style={{maxWidth:180}} value={fDestino} onChange={e=>setFDestino(e.target.value)}>
         <option value="">Destino (todos)</option>
         {destinoOptions.map(c => <option key={c} value={c}>{c}</option>)}
@@ -762,10 +761,11 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
       </div>
     ) : (
       <table>
-        <thead><tr><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Data da viagem</th><th>Status</th><th>Desfecho viagem</th><th></th></tr></thead>
+        <thead><tr><th>Data do agendamento</th><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Data da viagem</th><th>Status</th><th>Desfecho viagem</th><th></th></tr></thead>
         <tbody>
           {filtered.map(p => (
             <tr key={p.id}>
+              <td>{p.dataAgendamento ? new Date(p.dataAgendamento+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td>{p.nome}</td>
               <td>{p.nascimento ? new Date(p.nascimento+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td>{p.telefone || "—"}</td>
@@ -1485,7 +1485,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
                 <th className="hide-print" style={{width:36}}>
                   <input type="checkbox" checked={todosMarcados} onChange={toggleTodos} />
                 </th>
-                <th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Endereço do local</th><th>Ponto de referência</th><th>Ponto de ref. de saída</th><th>Data</th><th>Agendado por</th><th>Observação</th><th>Acompanhante</th>
+                <th>#</th><th>Paciente</th><th>Telefone</th><th>Endereço do paciente</th><th>Ponto de referência</th><th>Ponto de ref. de saída</th><th>Destino</th><th>Local</th><th>Data</th><th>Agendado por</th><th>Observação</th><th>Acompanhante</th>
               </tr>
             </thead>
             <tbody>
@@ -1497,11 +1497,11 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
                   <td>{i+1}</td>
                   <td style={{fontWeight:600}}>{p.nome}</td>
                   <td>{p.telefone || "—"}</td>
-                  <td>{p.destino || "—"}</td>
-                  <td>{p.local || "—"}</td>
-                  <td>{p.enderecoLocal || "—"}</td>
+                  <td>{p.endereco || "—"}</td>
                   <td>{p.pontoReferencia || "—"}</td>
                   <td>{p.pontoReferenciaSaida || "—"}</td>
+                  <td>{p.destino || "—"}</td>
+                  <td>{p.local || "—"}</td>
                   <td>{fmt(p.dataViagem)}</td>
                   <td>{p.agendadoPor || "—"}</td>
                   <td>{p.obs || "—"}</td>
