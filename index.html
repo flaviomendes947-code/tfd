@@ -585,7 +585,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
 
     <div className="section-title">Dados da viagem</div>
     <div className="grid grid-2">
-      <Field label="Destino" required>
+      <Field label="Município" required>
         <select value={form.destino} onChange={set('destino')}>
           <option value="">Selecione</option>
           {listaDestinos.map(d => <option key={d}>{d}</option>)}
@@ -1880,6 +1880,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
