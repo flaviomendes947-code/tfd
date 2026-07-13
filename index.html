@@ -328,7 +328,7 @@ const blankSolicitacao = () => ({
   telefone:"", endereco:"",
   unidade:"", destino:"", local:"", enderecoLocal:"", motivo:"",
   dataViagem:"", horarioSaida:"", pontoReferencia:"", pontoReferenciaSaida:"",
-  status:"Agendado", motoristaId:"", tipoTransporte:"", agendadoPor:"",
+  status:"Agendado", motoristaId:"", tipoTransporte:"", agendadoPor:"", formaAgendamento:"",
   acompanhante:"Não", nomeAcompanhante:"",
   prioridade:"",
   resultadoViagem:"", dataRealizacao:"",
@@ -641,6 +641,12 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
         </Field>
       )}
       <Field label="Agendado por"><input placeholder="Nome de quem realizou o agendamento" value={form.agendadoPor} onChange={set('agendadoPor')} /></Field>
+      <Field label="Forma de agendamento">
+        <select value={form.formaAgendamento} onChange={set('formaAgendamento')}>
+          <option value="">Selecione</option>
+          <option>Presencial</option><option>Telefone</option>
+        </select>
+      </Field>
     </div>
 
     <div className="grid" style={{marginTop:16}}>
