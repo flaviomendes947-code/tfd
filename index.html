@@ -599,13 +599,12 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       </Field>
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
-      <Field label="Local">
+      <Field label="Destino">
         <select value={form.local} onChange={set('local')}>
           <option value="">Selecione</option>
           {listaLocais.map(l => <option key={l}>{l}</option>)}
         </select>
       </Field>
-      <Field label="Endereço do local"><input placeholder="Rua, número, bairro do local de destino" value={form.enderecoLocal} onChange={set('enderecoLocal')} /></Field>
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
       <Field label="Data da viagem / consulta" required><input type="date" value={form.dataViagem} onChange={set('dataViagem')} /></Field>
@@ -1880,6 +1879,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
