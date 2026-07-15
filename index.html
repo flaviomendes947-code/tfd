@@ -718,7 +718,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
   const [fDataFim, setFDataFim] = useState("");
 
   const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
-  const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.destino)), [solicitacoes]);
+  const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.local)), [solicitacoes]);
   const motoristaName = (id) => { const m = (motoristas||[]).find(x=>x.id===id); return m ? m.nome : "—"; };
 
   const filtered = useMemo(() => {
@@ -726,7 +726,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
     return solicitacoes.filter(p =>
       (p.nome||"").toLowerCase().includes(t) &&
       (!fStatus || p.status === fStatus) &&
-      (!fDestino || p.destino === fDestino) &&
+      (!fDestino || p.local === fDestino) &&
       (!fMotorista || p.motoristaId === fMotorista) &&
       (!fDesfecho || (fDesfecho === "Sem desfecho" ? !p.resultadoViagem : p.resultadoViagem === fDesfecho)) &&
       (!fDataIni || (p.dataViagem && p.dataViagem >= fDataIni)) &&
@@ -795,7 +795,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
               <td>{p.nome}</td>
               <td>{p.nascimento ? new Date(p.nascimento+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td>{p.telefone || "—"}</td>
-              <td>{p.destino || "—"}</td>
+              <td>{p.local || "—"}</td>
               <td>{p.status === "Agendado" ? motoristaName(p.motoristaId) : "—"}</td>
               <td>{p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "—"}</td>
               <td><StatusBadge status={p.status}/></td>
