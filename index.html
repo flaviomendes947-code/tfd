@@ -1368,7 +1368,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
           </div>
           <table>
             <thead>
-              <tr><th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Local</th><th>Horário</th><th>Ponto de referência</th><th>Acompanhante</th></tr>
+              <tr><th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Horário</th><th>Ponto de referência</th><th>Acompanhante</th></tr>
             </thead>
             <tbody>
               {g.pacientes.map((p,i)=>(
@@ -1376,7 +1376,6 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
                   <td>{i+1}</td>
                   <td style={{fontWeight:600}}>{p.nome}</td>
                   <td>{p.telefone || "—"}</td>
-                  <td>{p.destino || "—"}</td>
                   <td>{p.local || "—"}</td>
                   <td>{p.horarioSaida || "—"}</td>
                   <td>{p.pontoReferencia || "—"}</td>
@@ -1911,6 +1910,7 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
+
 
 
 
