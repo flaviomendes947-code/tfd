@@ -254,7 +254,7 @@ function whatsappConfirmacaoLink(p){
   const comDDI = digits.length <= 11 ? "55" + digits : digits;
   const dataFormatada = p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "a definir";
   const horario = p.horarioSaida ? ` às ${p.horarioSaida}` : "";
-  const msg = `Olá, ${p.nome}! Confirmando seu transporte (TFD) agendado para ${dataFormatada}${horario}, com destino a ${p.destino || "definir"}.\n\nPor favor, esteja pronto(a) no horário combinado. Caso não possa comparecer, avise-nos com antecedência.`;
+  const msg = `Olá, ${p.nome}! Confirmando seu transporte (TFD) agendado para ${dataFormatada}${horario}, com destino a ${p.local || "definir"}.\n\nPor favor, esteja pronto(a) no horário combinado. Caso não possa comparecer, avise-nos com antecedência.`;
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
 
