@@ -366,17 +366,22 @@ function Toast({ message }) {
   return <div className={"toast hide-print" + (message ? " show" : "")}>{message}</div>;
 }
 
-function IconPlus(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>; }
+function IconPlus(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>; }
 function IconEdit(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>; }
 function IconTrash(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>; }
 function IconWhatsapp(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12.005 2C6.474 2 2 6.475 2 12.005c0 1.869.51 3.622 1.396 5.123L2 22l4.994-1.36a9.945 9.945 0 0 0 5.01 1.352h.001c5.531 0 10.005-4.475 10.005-10.005C22.01 6.475 17.536 2 12.005 2zm0 18.16h-.001a8.14 8.14 0 0 1-4.144-1.134l-.297-.176-3.09.842.832-3.013-.194-.309a8.128 8.128 0 0 1-1.246-4.365c0-4.494 3.657-8.15 8.144-8.15 2.176 0 4.22.848 5.758 2.388a8.087 8.087 0 0 1 2.386 5.766c0 4.494-3.658 8.151-8.148 8.151z"/></svg>; }
 function IconSearch(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>; }
 function IconUsers(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
 function IconCheck(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>; }
-function IconVan(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 17h1a2 2 0 0 0 4 0h8a2 2 0 0 0 4 0h1v-5l-3-4H7L3 12v5Z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/><path d="M14 8V5H5v7"/></svg>; }
+function IconVan(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17h1a2 2 0 0 0 4 0h8a2 2 0 0 0 4 0h1v-5l-3-4H7L3 12v5Z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/><path d="M14 8V5H5v7"/></svg>; }
 function IconCarHeader(){ return <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.6"><path d="M5 17H4a1 1 0 0 1-1-1v-4l2.2-4.4A2 2 0 0 1 7 6.4h10a2 2 0 0 1 1.8 1.2L21 12v4a1 1 0 0 1-1 1h-1"/><path d="M5 17h14"/><circle cx="7.5" cy="17" r="1.8"/><circle cx="16.5" cy="17" r="1.8"/></svg>; }
 function IconList(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>; }
-function IconPrint(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>; }
+function IconPrint(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>; }
+function IconDashboard(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>; }
+function IconClipboardList(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6M9 16h6M9 8h.01"/></svg>; }
+function IconLayers(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>; }
+function IconHistory(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3.5 2"/></svg>; }
+function IconDownload(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>; }
 
 const ESCALA_PRIORIDADE = ["Leve", "Moderada", "Alta"];
 
@@ -424,7 +429,7 @@ const BRASAO_LOGO_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsC
 const blankSolicitacao = () => ({
   id: null, tipoAgendamento:"",
   nome:"", cpf:"", nascimento:"", sexo:"",
-  telefone:"", endereco:"",
+  telefone:"", telefone2:"", endereco:"",
   unidade:"", destino:"", local:"", enderecoLocal:"", motivo:"",
   dataViagem:"", horarioSaida:"", pontoReferencia:"", pontoReferenciaSaida:"",
   status:"Agendado", motoristaId:"", tipoTransporte:"", dataAgendamento:"", agendadoPor:"", formaAgendamento:"",
@@ -567,6 +572,7 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
   const set = (k) => (e) => setForm(f => ({...f, [k]: e.target.value}));
   const setCpf = (e) => setForm(f => ({...f, cpf: maskCpfCns(e.target.value)}));
   const setTelefone = (e) => setForm(f => ({...f, telefone: maskPhone(e.target.value)}));
+  const setTelefone2 = (e) => setForm(f => ({...f, telefone2: maskPhone(e.target.value)}));
 
   const [buscaPaciente, setBuscaPaciente] = useState("");
 
@@ -700,9 +706,10 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     <div className="section-title">Contato</div>
     <div className="grid grid-2">
       <Field label="Telefone" required><input placeholder="(00) 00000-0000" value={form.telefone} onChange={setTelefone} maxLength={15} /></Field>
-      <Field label="Endereço"><input placeholder="Rua, número, bairro, cidade" value={form.endereco} onChange={set('endereco')} /></Field>
+      <Field label="Telefone 2 (opcional)"><input placeholder="(00) 00000-0000" value={form.telefone2} onChange={setTelefone2} maxLength={15} /></Field>
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
+      <Field label="Endereço"><input placeholder="Rua, número, bairro, cidade" value={form.endereco} onChange={set('endereco')} /></Field>
       <Field label="Ponto de referência"><input placeholder="Ex: perto da praça, próximo ao mercado..." value={form.pontoReferencia} onChange={set('pontoReferencia')} /></Field>
     </div>
 
@@ -810,6 +817,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
   const [fDestino, setFDestino] = useState("");
   const [fMotorista, setFMotorista] = useState("");
   const [fDesfecho, setFDesfecho] = useState("");
+  const [fTipoAgendamento, setFTipoAgendamento] = useState("");
   const [fDataIni, setFDataIni] = useState("");
   const [fDataFim, setFDataFim] = useState("");
 
@@ -825,10 +833,11 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
       (!fDestino || p.local === fDestino) &&
       (!fMotorista || p.motoristaId === fMotorista) &&
       (!fDesfecho || (fDesfecho === "Sem desfecho" ? !p.resultadoViagem : p.resultadoViagem === fDesfecho)) &&
+      (!fTipoAgendamento || p.tipoAgendamento === fTipoAgendamento) &&
       (!fDataIni || (p.dataViagem && p.dataViagem >= fDataIni)) &&
       (!fDataFim || (p.dataViagem && p.dataViagem <= fDataFim))
     );
-  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fDesfecho, fDataIni, fDataFim]);
+  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fDesfecho, fTipoAgendamento, fDataIni, fDataFim]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -840,8 +849,8 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
     faltou: filtered.filter(p=>p.resultadoViagem==="Paciente faltou").length,
   }), [filtered]);
 
-  const hasFilters = fStatus || fDestino || fMotorista || fDesfecho || fDataIni || fDataFim;
-  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFDesfecho(""); setFDataIni(""); setFDataFim(""); };
+  const hasFilters = fStatus || fDestino || fMotorista || fDesfecho || fTipoAgendamento || fDataIni || fDataFim;
+  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFDesfecho(""); setFTipoAgendamento(""); setFDataIni(""); setFDataFim(""); };
 
   return <div className="card">
     <div className="stat-row" style={{display:"flex", flexWrap:"wrap", gap:10, marginBottom:16}}>
@@ -867,6 +876,10 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
         <option value="">Desfecho (todos)</option>
         {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
         <option value="Sem desfecho">Sem desfecho</option>
+      </select>
+      <select style={{maxWidth:190}} value={fTipoAgendamento} onChange={e=>setFTipoAgendamento(e.target.value)}>
+        <option value="">Tipo de agendamento (todos)</option>
+        {TIPOS_AGENDAMENTO.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
       <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
         De <input type="date" style={{maxWidth:150}} value={fDataIni} onChange={e=>setFDataIni(e.target.value)} />
@@ -1941,14 +1954,14 @@ function App(){
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2600); };
 
   const tabs = [
-    {id:"dashboard", label:"Dashboard", icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>},
+    {id:"dashboard", label:"Dashboard", icon:<IconDashboard/>},
     {id:"cadastro", label: editingSolicitacao ? "Editando solicitação" : "Nova solicitação", icon:<IconPlus/>},
-    {id:"solicitacoes", label:"Solicitações", icon:<IconSearch/>},
+    {id:"solicitacoes", label:"Solicitações", icon:<IconClipboardList/>},
     {id:"motoristas", label:"Motoristas / Veículos", icon:<IconVan/>},
     {id:"imprimir-rota", label:"Imprimir Rota", icon:<IconPrint/>},
-    {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconList/>},
-    {id:"historico-paciente", label:"Histórico do paciente", icon:<IconSearch/>},
-    {id:"exportar", label:"Exportar", icon:<IconUsers/>},
+    {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconLayers/>},
+    {id:"historico-paciente", label:"Histórico do paciente", icon:<IconHistory/>},
+    {id:"exportar", label:"Exportar", icon:<IconDownload/>},
   ];
 
   return <div>
