@@ -1460,6 +1460,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
   }, [motoristas, solicitacoes, data]);
 
   const totalPacientes = grupos.reduce((s,g)=>s+g.pacientes.length, 0);
+  const totalAcompanhantes = grupos.reduce((s,g)=>s+g.pacientes.filter(p=>p.acompanhante==="Sim").length, 0);
 
   return <div className="card">
     <div className="section-title hide-print" style={{marginTop:0}}>Resumo do dia — todos os motoristas</div>
@@ -1472,7 +1473,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
       <button className="btn btn-primary" disabled={!data || grupos.length===0} onClick={()=>window.print()}>
         <IconPrint/> Imprimir resumo do dia
       </button>
-      {data && <span className="count-pill">{grupos.length} motorista{grupos.length!==1?"s":""} · {totalPacientes} paciente{totalPacientes!==1?"s":""}</span>}
+      {data && <span className="count-pill">{grupos.length} motorista{grupos.length!==1?"s":""} · {totalPacientes} paciente{totalPacientes!==1?"s":""} · {totalAcompanhantes} acompanhante{totalAcompanhantes!==1?"s":""}</span>}
     </div>
 
     {!data ? (
@@ -1480,15 +1481,44 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
     ) : grupos.length === 0 ? (
       <div className="empty-state hide-print"><IconVan/><div>Nenhuma viagem agendada para esta data.</div></div>
     ) : (
-      grupos.map((g, idx) => (
-        <div key={g.motorista.id} style={{marginTop: idx===0 ? 20 : 0, pageBreakBefore: idx>0 ? "always" : "auto", breakBefore: idx>0 ? "page" : "auto"}}>
+      <>
+        <div style={{marginTop:20, marginBottom:20}}>
+          <PrintHeader subtitle={`Resumo do dia — ${fmt(data)}`} />
+          <div className="section-title" style={{marginTop:0}}>Quantitativo por motorista — {fmt(data)}</div>
+          <table>
+            <thead><tr><th>Motorista</th><th>Veículo</th><th>Pacientes</th><th>Acompanhantes</th><th>Total de pessoas</th></tr></thead>
+            <tbody>
+              {grupos.map(g => {
+                const acomp = g.pacientes.filter(p=>p.acompanhante==="Sim").length;
+                return (
+                <tr key={g.motorista.id}>
+                  <td style={{fontWeight:600}}>{g.motorista.nome}</td>
+                  <td>{g.motorista.tipoVeiculo}{g.motorista.placa ? " · " + g.motorista.placa : ""}</td>
+                  <td>{g.pacientes.length}</td>
+                  <td>{acomp}</td>
+                  <td>{g.pacientes.length + acomp}</td>
+                </tr>
+                );
+              })}
+              <tr style={{fontWeight:700}}>
+                <td colSpan={2}>Total geral</td>
+                <td>{totalPacientes}</td>
+                <td>{totalAcompanhantes}</td>
+                <td>{totalPacientes + totalAcompanhantes}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {grupos.map((g, idx) => (
+        <div key={g.motorista.id} style={{marginTop: 0, pageBreakBefore:"always", breakBefore:"page"}}>
           <PrintHeader subtitle={`Resumo do dia — ${fmt(data)}`} />
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", borderBottom:"2px solid var(--border-strong, #333)", paddingBottom:8, marginBottom:10, marginTop: idx>0 ? 20 : 0}}>
             <div>
               <div style={{fontSize:16, fontWeight:700}}>{g.motorista.nome}</div>
               <div style={{fontSize:12, color:"var(--muted)"}}>{g.motorista.tipoVeiculo}{g.motorista.placa ? " · " + g.motorista.placa : ""}</div>
             </div>
-            <div style={{fontSize:13, fontWeight:600}}>{fmt(data)} — {g.pacientes.length} paciente{g.pacientes.length!==1?"s":""}</div>
+            <div style={{fontSize:13, fontWeight:600}}>{fmt(data)} — {g.pacientes.length} paciente{g.pacientes.length!==1?"s":""} · {g.pacientes.filter(p=>p.acompanhante==="Sim").length} acompanhante{g.pacientes.filter(p=>p.acompanhante==="Sim").length!==1?"s":""}</div>
           </div>
           <table>
             <thead>
@@ -1509,7 +1539,8 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
             </tbody>
           </table>
         </div>
-      ))
+      ))}
+      </>
     )}
   </div>;
 }
@@ -1579,6 +1610,17 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
     setSelecionados(todosMarcados ? new Set() : new Set(filtrados.map(p => p.id)));
   };
 
+  const contagemPorData = useMemo(() => {
+    const map = {};
+    porTipo.forEach(p => {
+      const key = p.dataViagem || "Sem data definida";
+      if(!map[key]) map[key] = { pacientes:0, acompanhantes:0 };
+      map[key].pacientes += 1;
+      if(p.acompanhante === "Sim") map[key].acompanhantes += 1;
+    });
+    return Object.entries(map).sort(([a],[b]) => a.localeCompare(b));
+  }, [porTipo]);
+
   return <div>
     <div className="card hide-print" style={{marginBottom:16}}>
       <div className="toolbar" style={{marginBottom:0}}>
@@ -1627,7 +1669,20 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
         <IconPrint/> Imprimir rota selecionada
       </button>
       <span className="count-pill">{selecionados.size} de {filtrados.length} paciente{filtrados.length!==1?"s":""} selecionado{selecionados.size!==1?"s":""}</span>
+      <span className="count-pill" style={{background:"#eef2ff", color:"#4338ca", border:"1px solid #e0e7ff"}}>
+        {filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length} acompanhante{filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length!==1?"s":""} selecionado{filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length!==1?"s":""}
+      </span>
     </div>
+
+    {motoristaId && contagemPorData.length > 0 && (
+      <div className="hide-print" style={{display:"flex", flexWrap:"wrap", gap:8, marginBottom:16}}>
+        {contagemPorData.map(([dataKey, c]) => (
+          <span key={dataKey} className="count-pill" style={{background:"#eef2ff", color:"#4338ca", border:"1px solid #e0e7ff"}}>
+            {dataKey === "Sem data definida" ? dataKey : fmt(dataKey)}: {c.pacientes} paciente{c.pacientes!==1?"s":""} · {c.acompanhantes} acompanhante{c.acompanhantes!==1?"s":""}
+          </span>
+        ))}
+      </div>
+    )}
 
     <div className="section-title hide-print" style={{marginTop:26}}>Prévia da rota</div>
     {!motoristaId
@@ -2043,9 +2098,6 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
 </script>
-
-
-
 
 
 
