@@ -568,7 +568,8 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
   const listaMotivos = (listas && listas.motivos) || MOTIVOS_PADRAO;
   const listaLocais = (listas && listas.locais) || LOCAIS_PADRAO;
   const [form, setForm] = useState(editTarget || blankSolicitacao());
-  useEffect(()=>{ setForm(editTarget || blankSolicitacao()); }, [editTarget]);
+  const [datasExtras, setDatasExtras] = useState([]);
+  useEffect(()=>{ setForm(editTarget || blankSolicitacao()); setDatasExtras([]); }, [editTarget]);
   const set = (k) => (e) => setForm(f => ({...f, [k]: e.target.value}));
   const setCpf = (e) => setForm(f => ({...f, cpf: maskCpfCns(e.target.value)}));
   const setTelefone = (e) => setForm(f => ({...f, telefone: maskPhone(e.target.value)}));
@@ -616,6 +617,10 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     notify(`Dados de ${p.nome} preenchidos. Complete os dados da nova viagem.`);
   };
 
+  const addDataExtra = () => setDatasExtras(d => [...d, ""]);
+  const updateDataExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? value : v));
+  const removeDataExtra = (idx) => setDatasExtras(d => d.filter((_,i) => i!==idx));
+
   const handleSubmit = async () => {
     if(!form.tipoAgendamento || !form.nome || !form.cpf || !form.nascimento || !form.telefone || !form.destino || !form.dataViagem){
       notify("Preencha os campos obrigatórios (*)");
@@ -634,23 +639,31 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       return;
     }
 
-    const duplicada = solicitacoes.find(s =>
-      s.id !== form.id &&
-      onlyDigits(s.cpf||"") === cpfDigits &&
-      s.dataViagem === form.dataViagem &&
-      !["Cancelada pela secretaria", "Cancelada pelo paciente"].includes(s.resultadoViagem)
-    );
-    if(duplicada){
-      const dataFormatada = duplicada.dataViagem ? new Date(duplicada.dataViagem+"T00:00").toLocaleDateString('pt-BR') : duplicada.dataViagem;
+    const datasValidas = [...new Set([form.dataViagem, ...datasExtras.filter(Boolean)])].sort();
+
+    const duplicadas = datasValidas
+      .map(dt => solicitacoes.find(s =>
+        s.id !== form.id &&
+        onlyDigits(s.cpf||"") === cpfDigits &&
+        s.dataViagem === dt &&
+        !["Cancelada pela secretaria", "Cancelada pelo paciente"].includes(s.resultadoViagem)
+      ))
+      .filter(Boolean);
+    if(duplicadas.length){
+      const lista = duplicadas.map(d => `• ${new Date(d.dataViagem+"T00:00").toLocaleDateString('pt-BR')} (destino: ${d.destino || "—"})`).join("\n");
       const confirmar = window.confirm(
-        `Já existe uma solicitação para ${duplicada.nome} na data ${dataFormatada} (destino: ${duplicada.destino || "—"}).\n\nDeseja cadastrar mesmo assim?`
+        `Já existe(m) solicitação(ões) para ${duplicadas[0].nome} nas seguintes datas:\n${lista}\n\nDeseja cadastrar mesmo assim?`
       );
       if(!confirmar) return;
     }
 
-    await save(form);
-    notify(editTarget ? "Solicitação atualizada" : "Solicitação de transporte cadastrada");
+    await save({ ...form, dataViagem: datasValidas[0] });
+    for(const dt of datasValidas.slice(1)){
+      await save({ ...form, id: null, createdAt: null, dataViagem: dt, status:"Agendado", motoristaId:"", resultadoViagem:"", dataRealizacao:"" });
+    }
+    notify(editTarget ? "Solicitação atualizada" : (datasValidas.length > 1 ? `${datasValidas.length} solicitações cadastradas (uma por data)` : "Solicitação de transporte cadastrada"));
     setForm(blankSolicitacao());
+    setDatasExtras([]);
     if(onDone) onDone();
   };
 
@@ -732,13 +745,32 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       <Field label="Destino">
         <select value={form.local} onChange={set('local')}>
           <option value="">Selecione</option>
-          {listaLocais.map(l => <option key={l}>{l}</option>)}
+          {[...listaLocais].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(l => <option key={l}>{l}</option>)}
         </select>
       </Field>
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
       <Field label="Data da viagem / consulta" required><input type="date" value={form.dataViagem} onChange={set('dataViagem')} /></Field>
       <Field label="Horário de saída"><input type="time" value={form.horarioSaida} onChange={set('horarioSaida')} /></Field>
+    </div>
+
+    <div style={{marginTop:14}}>
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8}}>
+        <div style={{fontSize:12.5, color:"var(--muted)"}}>
+          Paciente precisa ir em vários dias do mês (ex: fisioterapia, hemodiálise)? Adicione outras datas — será criada uma solicitação separada para cada uma.
+        </div>
+        <button type="button" className="btn btn-secondary" onClick={addDataExtra}><IconPlus/> Adicionar outra data</button>
+      </div>
+      {datasExtras.length > 0 && (
+        <div style={{display:"flex", flexDirection:"column", gap:8, marginTop:10}}>
+          {datasExtras.map((d, idx) => (
+            <div key={idx} style={{display:"flex", alignItems:"center", gap:8}}>
+              <input type="date" value={d} onChange={e=>updateDataExtra(idx, e.target.value)} style={{maxWidth:200}} />
+              <button type="button" className="icon-btn danger" onClick={()=>removeDataExtra(idx)}><IconTrash/></button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
     <div className="grid grid-3" style={{marginTop:16}}>
       <Field label="Tipo de veículo">
