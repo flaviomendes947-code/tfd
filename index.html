@@ -402,14 +402,15 @@ function linkConfirmacaoMotorista(motoristaId, data, nomeMotorista){
 }
 
 
-// Monta o link do WhatsApp para o motorista, com a mensagem + link de confirmação da rota
-function whatsappLinkMotorista(motorista, data, qtdPacientes){
+// Monta o link do WhatsApp para o motorista, com a mensagem + lista de pacientes + link de confirmação da rota
+function whatsappLinkMotorista(motorista, data, pacientes){
   const digits = onlyDigits(motorista.telefone || "");
   if(!digits) return null;
   const comDDI = digits.length <= 11 ? "55" + digits : digits;
   const dataFormatada = data ? new Date(data+"T00:00").toLocaleDateString('pt-BR') : "";
   const link = linkConfirmacaoMotorista(motorista.id, data, motorista.nome);
-  const msg = `Olá, ${motorista.nome}! Sua rota do dia ${dataFormatada} tem ${qtdPacientes} paciente${qtdPacientes!==1?"s":""} agendado${qtdPacientes!==1?"s":""}.\n\nApós realizar a viagem, confirme os pacientes que embarcaram por este link:\n${link}`;
+  const lista = pacientes.map((p, i) => `${i+1}. ${p.nome}${p.local ? " — " + p.local : ""}`).join("\n");
+  const msg = `Sr. ${motorista.nome}, segue a lista de pacientes do dia ${dataFormatada}:\n\n${lista}\n\nApós realizar a viagem, confirme os pacientes que embarcaram por este link:\n${link}\n\nBom trabalho!`;
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1776,9 +1777,9 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
                 catch(e){ window.prompt("Copie o link abaixo:", link); }
               }}
             ><IconLink/> Copiar link de confirmação</button>
-            {whatsappLinkMotorista(g.motorista, data, g.pacientes.length) && (
+            {whatsappLinkMotorista(g.motorista, data, g.pacientes) && (
               <button className="btn btn-secondary" style={{color:"#25D366"}}
-                onClick={()=>window.open(whatsappLinkMotorista(g.motorista, data, g.pacientes.length), '_blank')}>
+                onClick={()=>window.open(whatsappLinkMotorista(g.motorista, data, g.pacientes), '_blank')}>
                 <IconWhatsapp/> Enviar ao motorista
               </button>
             )}
@@ -1948,7 +1949,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
       ><IconLink/> Copiar link de confirmação</button>
       {(() => {
         const mot = motoristas.find(m=>m.id===motoristaId);
-        const link = (mot && dataFiltro) ? whatsappLinkMotorista(mot, dataFiltro, filtrados.length) : null;
+        const link = (mot && dataFiltro) ? whatsappLinkMotorista(mot, dataFiltro, filtrados) : null;
         return link ? (
           <button className="btn btn-secondary" style={{color:"#25D366"}} onClick={()=>window.open(link, '_blank')}>
             <IconWhatsapp/> Enviar link ao motorista
@@ -2083,9 +2084,36 @@ function PatientHistoryTab({ solicitacoes, motoristas }){
   </div>;
 }
 
+function LocalChartModal({ data, max, hasFilter, onClose }){
+  const total = data.reduce((s,d) => s + d.value, 0);
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" style={{maxWidth:640, maxHeight:'85vh', display:'flex', flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+      <h3 style={{marginBottom:2}}>Viagens por local {hasFilter ? "(período selecionado)" : ""}</h3>
+      <p style={{marginBottom:16}}>{data.length} local(is) · {total} viagem(ns) no total</p>
+      <div style={{overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:12, paddingRight:4}}>
+        {data.map(d => (
+          <div key={d.label}>
+            <div style={{display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4, gap:10}}>
+              <span>{d.label}</span>
+              <span style={{color:"var(--muted)", fontWeight:600, whiteSpace:"nowrap"}}>{d.value}</span>
+            </div>
+            <div style={{background:"var(--panel2)", borderRadius:6, height:10, overflow:"hidden"}}>
+              <div style={{width:`${(d.value/max)*100}%`, height:"100%", background:"#0ea5e9", borderRadius:6}}></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="actions-row">
+        <button className="btn btn-secondary" onClick={onClose}>Fechar</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function DashboardTab({ solicitacoes }){
   const [fDataIni, setFDataIni] = useState("");
   const [fDataFim, setFDataFim] = useState("");
+  const [showLocalModal, setShowLocalModal] = useState(false);
 
   const DESFECHO_COLORS = {
     "Realizada": "#16a34a",
@@ -2142,6 +2170,14 @@ function DashboardTab({ solicitacoes }){
     return Object.entries(counts).map(([label,value]) => ({label,value})).sort((a,b)=>b.value-a.value).slice(0,8);
   }, [filtradas]);
   const maxLocal = Math.max(1, ...localData.map(d=>d.value));
+
+  // Mesma contagem, mas sem limitar aos 8 primeiros — usada no modal "ver todos os locais"
+  const localDataAll = useMemo(() => {
+    const counts = {};
+    filtradas.forEach(p => { const d = p.local || "Não informado"; counts[d] = (counts[d]||0) + 1; });
+    return Object.entries(counts).map(([label,value]) => ({label,value})).sort((a,b)=>b.value-a.value);
+  }, [filtradas]);
+  const maxLocalAll = Math.max(1, ...localDataAll.map(d=>d.value));
 
   const mesData = useMemo(() => {
     const counts = {};
@@ -2240,8 +2276,18 @@ function DashboardTab({ solicitacoes }){
         )}
       </div>
 
-      <div className="card">
-        <div className="section-title" style={{marginTop:0}}>Viagens por local {hasFilter ? "(período selecionado)" : ""}</div>
+      <div
+        className="card"
+        style={{cursor: localData.length ? "pointer" : "default"}}
+        onClick={() => { if(localData.length) setShowLocalModal(true); }}
+        title={localData.length ? "Toque para ver todos os locais" : undefined}
+      >
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12}}>
+          <div className="section-title" style={{margin:0}}>Viagens por local {hasFilter ? "(período selecionado)" : ""}</div>
+          {localData.length > 0 && (
+            <span style={{fontSize:12, color:"var(--accent)", fontWeight:600, whiteSpace:"nowrap"}}>Ver todos ›</span>
+          )}
+        </div>
         {localData.length === 0 ? (
           <div className="empty-state"><IconVan/><div>Sem dados suficientes ainda.</div></div>
         ) : (
@@ -2259,6 +2305,15 @@ function DashboardTab({ solicitacoes }){
           </div>
         )}
       </div>
+
+      {showLocalModal && (
+        <LocalChartModal
+          data={localDataAll}
+          max={maxLocalAll}
+          hasFilter={hasFilter}
+          onClose={() => setShowLocalModal(false)}
+        />
+      )}
 
       <div className="card">
         <div className="section-title" style={{marginTop:0}}>Viagens realizadas por mês {hasFilter ? "(período selecionado)" : ""}</div>
