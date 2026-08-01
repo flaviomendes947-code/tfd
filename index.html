@@ -309,9 +309,6 @@
     .grid-2 span input[type="date"]{ max-width:none !important; flex:1; min-width:0; }
 
     .modal{ padding:18px; max-height:90vh; overflow-y:auto; }
-
-    .stat-card{ padding:14px 16px; }
-    .stat-card .stat-num{ font-size:28px; }
   }
 
   /* Tabelas: rolam na horizontal dentro do próprio card, sem quebrar o layout da página */
@@ -319,6 +316,36 @@
   .table-scroll table{ min-width:640px; }
   @media(max-width:600px){
     .table-scroll table{ min-width:760px; }
+  }
+
+  /* ===== Página de confirmação do motorista (link enviado por WhatsApp) ===== */
+  .driver-confirm-page{ min-height:100vh; background:var(--bg); padding:28px 16px; }
+  .driver-confirm-card{ max-width:640px; margin:0 auto; }
+  .driver-confirm-header{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .driver-confirm-header img{ width:52px; height:52px; object-fit:contain; flex-shrink:0; }
+  .driver-confirm-title{ font-size:18px; font-weight:800; line-height:1.25; }
+  .driver-confirm-sub{ font-size:13.5px; color:var(--muted); margin-top:3px; }
+  .driver-confirm-intro{ font-size:13.5px; color:var(--muted); margin-bottom:18px; line-height:1.55; }
+  .driver-patients{ display:flex; flex-direction:column; gap:12px; }
+  .driver-patient{ background:var(--panel2); border:1.5px solid var(--border); border-radius:14px; padding:16px; }
+  .driver-patient-name{ font-size:16px; font-weight:700; margin-bottom:4px; }
+  .driver-patient-info{ font-size:13px; color:var(--muted); margin-bottom:12px; line-height:1.45; }
+  .driver-patient select{ font-size:15.5px; font-weight:600; padding:13px; background:#fff; }
+  .driver-confirm-actions{ margin-top:22px; }
+  .driver-confirm-actions .btn{ width:100%; padding:15px; font-size:15.5px; }
+
+  @media(max-width:600px){
+    .driver-confirm-page{ padding:0; background:var(--panel); }
+    .driver-confirm-card{ max-width:none; padding:20px 16px 110px; }
+    .driver-confirm-header img{ width:42px; height:42px; }
+    .driver-confirm-title{ font-size:16.5px; }
+    .driver-confirm-sub{ font-size:12.5px; }
+    .driver-confirm-actions{
+      position:fixed; left:0; right:0; bottom:0; margin-top:0; z-index:50;
+      background:var(--panel); padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+      box-shadow:0 -6px 18px rgba(0,0,0,.08); border-top:1px solid var(--border);
+    }
+    .driver-confirm-actions .btn{ padding:16px; font-size:16px; }
   }
 </style>
 
@@ -635,13 +662,13 @@ function DriverConfirmView({ motoristaId, data }){
 
   const dataFormatada = data ? new Date(data+"T00:00").toLocaleDateString('pt-BR') : "";
 
-  return <div style={{minHeight:"100vh", background:"var(--bg)", padding:"24px 16px"}}>
-    <div className="card" style={{maxWidth:640, margin:"0 auto"}}>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
-        <img src={BRASAO_LOGO_URI} alt="Brasão do município" style={{width:52, height:52, objectFit:"contain"}} />
+  return <div className="driver-confirm-page">
+    <div className="driver-confirm-card">
+      <div className="driver-confirm-header">
+        <img src={BRASAO_LOGO_URI} alt="Brasão do município" />
         <div>
-          <div style={{fontSize:16, fontWeight:700}}>Confirmação de viagem — TFD</div>
-          <div style={{fontSize:13, color:"var(--muted)"}}>{motorista ? motorista.nome : "Motorista"} {dataFormatada && "· " + dataFormatada}</div>
+          <div className="driver-confirm-title">Confirmação de viagem — TFD</div>
+          <div className="driver-confirm-sub">{motorista ? motorista.nome : "Motorista"} {dataFormatada && "· " + dataFormatada}</div>
         </div>
       </div>
 
@@ -657,14 +684,14 @@ function DriverConfirmView({ motoristaId, data }){
 
       {!loading && !erro && !done && pacientes.length > 0 && (
         <>
-          <div style={{fontSize:13, color:"var(--muted)", marginBottom:16}}>
+          <div className="driver-confirm-intro">
             Marque o que aconteceu com cada paciente e depois toque em "Confirmar viagens". Por padrão, todos já estão marcados como "Realizada".
           </div>
-          <div style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div className="driver-patients">
             {pacientes.map(p => (
-              <div key={p.id} className="card" style={{padding:14, background:"var(--bg)"}}>
-                <div style={{fontWeight:600, marginBottom:2}}>{p.nome}</div>
-                <div style={{fontSize:12.5, color:"var(--muted)", marginBottom:8}}>
+              <div key={p.id} className="driver-patient">
+                <div className="driver-patient-name">{p.nome}</div>
+                <div className="driver-patient-info">
                   Destino: {p.local || "—"}{p.horarioSaida ? " · Saída: " + p.horarioSaida : ""}{p.acompanhante==="Sim" ? " · Com acompanhante" : ""}
                 </div>
                 <select
@@ -676,7 +703,7 @@ function DriverConfirmView({ motoristaId, data }){
               </div>
             ))}
           </div>
-          <div className="actions-row" style={{marginTop:18}}>
+          <div className="driver-confirm-actions">
             <button className="btn btn-primary" disabled={saving} onClick={confirmarTudo}>
               {saving ? "Salvando..." : "Confirmar viagens"}
             </button>
