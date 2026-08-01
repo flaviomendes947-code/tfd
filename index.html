@@ -1,3 +1,11 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Sistema TFD</title>
+</head>
+<body style="margin:0;">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -293,6 +301,24 @@
 
     table{ font-size:12.5px; }
     th, td{ padding:9px 10px; }
+
+    .toolbar select, .toolbar input{ max-width:none !important; width:100%; }
+    .toolbar > span{ width:100%; flex-wrap:wrap; }
+
+    .grid-2 span[style*="display:flex"] input[type="date"],
+    .grid-2 span input[type="date"]{ max-width:none !important; flex:1; min-width:0; }
+
+    .modal{ padding:18px; max-height:90vh; overflow-y:auto; }
+
+    .stat-card{ padding:14px 16px; }
+    .stat-card .stat-num{ font-size:28px; }
+  }
+
+  /* Tabelas: rolam na horizontal dentro do próprio card, sem quebrar o layout da página */
+  .table-scroll{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-scroll table{ min-width:640px; }
+  @media(max-width:600px){
+    .table-scroll table{ min-width:760px; }
   }
 </style>
 
@@ -1065,7 +1091,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
         <div>Nenhuma solicitação encontrada. Use "Nova solicitação" para começar.</div>
       </div>
     ) : (
-      <table>
+      <div className="table-scroll"><table>
         <thead><tr><th>Data do agendamento</th><th>Nome</th><th>Nascimento</th><th>Telefone</th><th>Destino</th><th>Motorista</th><th>Data da viagem</th><th>Status</th><th>Desfecho viagem</th><th></th></tr></thead>
         <tbody>
           {filtered.map(p => (
@@ -1103,7 +1129,7 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     )}
   </div>;
 }
@@ -1179,7 +1205,7 @@ function MotoristasTab({ motoristas, loading, save, remove, notify, solicitacoes
       </div>
       {loading ? <div className="loading">Carregando...</div> :
       filtered.length === 0 ? <div className="empty-state"><IconVan/><div>Nenhum motorista encontrado.</div></div> :
-      <table>
+      <div className="table-scroll"><table>
         <thead><tr><th>Nome</th><th>Veículo</th><th>Placa</th><th>Contato</th><th>Viagens agendadas</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {filtered.map(p => (
@@ -1202,7 +1228,7 @@ function MotoristasTab({ motoristas, loading, save, remove, notify, solicitacoes
             </tr>
           ))}
         </tbody>
-      </table>}
+      </table></div>}
     </div>
     {confirmDel && <ConfirmModal title="Excluir motorista"
       text={`Tem certeza que deseja excluir "${confirmDel.nome}"? Essa ação não pode ser desfeita.`}
@@ -1454,7 +1480,7 @@ function WaitingListTab({ solicitacoes, loading, onEdit, motoristas = [], save, 
 
     {byDestino.length > 0 && <div className="card" style={{marginBottom:16}}>
       <div className="section-title">Lista de espera por destino</div>
-      <table>
+      <div className="table-scroll"><table>
         <thead><tr><th>Destino</th><th>Pacientes aguardando</th></tr></thead>
         <tbody>
           {byDestino.map(([d, n]) => (
@@ -1471,7 +1497,7 @@ function WaitingListTab({ solicitacoes, loading, onEdit, motoristas = [], save, 
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </div>}
 
     <div className="card">
@@ -1490,7 +1516,7 @@ function WaitingListTab({ solicitacoes, loading, onEdit, motoristas = [], save, 
           </div>
         : filtered.length === 0
           ? <div className="empty-state"><IconVan/><div>Nenhum resultado para a busca.</div></div>
-          : <table>
+          : <div className="table-scroll"><table>
               <thead>
                 <tr>
                   <th>#</th>
@@ -1534,7 +1560,7 @@ function WaitingListTab({ solicitacoes, loading, onEdit, motoristas = [], save, 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
       }
     </div>
     {quickSolicitacao && <QuickScheduleModal solicitacao={quickSolicitacao} motoristas={motoristas}
@@ -1579,7 +1605,7 @@ function ListaEditor({ titulo, itens, onChange }){
     </div>
     {itens.length === 0
       ? <div className="empty-state" style={{padding:'24px 20px'}}><div>Nenhum item cadastrado ainda.</div></div>
-      : <table>
+      : <div className="table-scroll"><table>
           <tbody>
             {itens.map((it, idx) => (
               <tr key={idx}>
@@ -1599,7 +1625,7 @@ function ListaEditor({ titulo, itens, onChange }){
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
     }
   </div>;
 }
@@ -1655,7 +1681,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
         <div style={{marginTop:20, marginBottom:20}}>
           <PrintHeader subtitle={`Resumo do dia — ${fmt(data)}`} />
           <div className="section-title" style={{marginTop:0}}>Quantitativo por motorista — {fmt(data)}</div>
-          <table>
+          <div className="table-scroll"><table>
             <thead><tr><th>Motorista</th><th>Veículo</th><th>Pacientes</th><th>Acompanhantes</th><th>Total de pessoas</th></tr></thead>
             <tbody>
               {grupos.map(g => {
@@ -1677,7 +1703,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
                 <td>{totalPacientes + totalAcompanhantes}</td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
 
         {grupos.map((g, idx) => (
@@ -1706,7 +1732,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
               </button>
             )}
           </div>
-          <table>
+          <div className="table-scroll"><table>
             <thead>
               <tr><th>#</th><th>Paciente</th><th>Telefone</th><th>Destino</th><th>Horário</th><th>Ponto de referência</th><th>Acompanhante</th></tr>
             </thead>
@@ -1723,7 +1749,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       ))}
       </>
@@ -1900,7 +1926,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
         ? <div className="empty-state hide-print"><IconVan/><div>Nenhuma viagem agendada para este motorista com os filtros selecionados.</div></div>
         : <>
           <PrintHeader subtitle={`Rota — ${motoristas.find(m=>m.id===motoristaId)?.nome || ""}${dataFiltro ? " — " + fmt(dataFiltro) : ""}`} />
-          <table>
+          <div className="table-scroll"><table>
             <thead>
               <tr>
                 <th className="hide-print" style={{width:36}}>
@@ -1928,7 +1954,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
     }
     </div>
@@ -1983,7 +2009,7 @@ function PatientHistoryTab({ solicitacoes, motoristas }){
             </div>
             <span className="count-pill">{pac.viagens.length} viage{pac.viagens.length!==1?"ns":"m"}</span>
           </div>
-          <table>
+          <div className="table-scroll"><table>
             <thead><tr><th>Data</th><th>Destino</th><th>Local</th><th>Motivo</th><th>Motorista</th><th>Status</th><th>Desfecho</th></tr></thead>
             <tbody>
               {pac.viagens.map(v => (
@@ -1998,7 +2024,7 @@ function PatientHistoryTab({ solicitacoes, motoristas }){
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       ))
     )}
@@ -2317,6 +2343,8 @@ function App(){
   }
 })();
 </script>
+</body>
+</html>
 
 
 
