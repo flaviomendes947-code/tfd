@@ -331,7 +331,26 @@ function maskPhone(v){
   return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
 }
 
-// Monta o link do WhatsApp com a mensagem de confirmação da viagem já preenchida
+// Monta o link público de confirmação de viagem para o motorista (sem login)
+function linkConfirmacaoMotorista(motoristaId, data){
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?confirmar=${encodeURIComponent(motoristaId)}&data=${encodeURIComponent(data)}`;
+}
+
+
+// Monta o link do WhatsApp para o motorista, com a mensagem + link de confirmação da rota
+function whatsappLinkMotorista(motorista, data, qtdPacientes){
+  const digits = onlyDigits(motorista.telefone || "");
+  if(!digits) return null;
+  const comDDI = digits.length <= 11 ? "55" + digits : digits;
+  const dataFormatada = data ? new Date(data+"T00:00").toLocaleDateString('pt-BR') : "";
+  const link = linkConfirmacaoMotorista(motorista.id, data);
+  const msg = `Olá, ${motorista.nome}! Sua rota do dia ${dataFormatada} tem ${qtdPacientes} paciente${qtdPacientes!==1?"s":""} agendado${qtdPacientes!==1?"s":""}.\n\nApós realizar a viagem, confirme os pacientes que embarcaram por este link:\n${link}`;
+  return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
+}
+
+
+// Monta o link do WhatsApp com a mensagem de confirmação da viagem já preenchida (paciente)
 function whatsappConfirmacaoLink(p){
   const digits = onlyDigits(p.telefone || "");
   if(!digits) return null;
@@ -382,6 +401,7 @@ function IconClipboardList(){ return <svg width="16" height="16" viewBox="0 0 24
 function IconLayers(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>; }
 function IconHistory(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3.5 2"/></svg>; }
 function IconDownload(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>; }
+function IconLink(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>; }
 
 const ESCALA_PRIORIDADE = ["Leve", "Moderada", "Alta"];
 
@@ -526,6 +546,124 @@ function PrintHeader({ subtitle }){
     <div>
       <div className="print-header-title">Transporte Fora do Domicílio (TFD)</div>
       {subtitle && <div className="print-header-subtitle">{subtitle}</div>}
+    </div>
+  </div>;
+}
+
+// Página pública (sem login) que o motorista acessa pelo link enviado após a rota,
+// para confirmar o desfecho de cada paciente. Lê e grava direto no Supabase.
+function DriverConfirmView({ motoristaId, data }){
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
+  const [motorista, setMotorista] = useState(null);
+  const [pacientes, setPacientes] = useState([]);
+  const [desfechos, setDesfechos] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try{
+        const motRes = await Store.get("tfd_motoristas:" + motoristaId, true);
+        setMotorista(motRes ? JSON.parse(motRes.value) : null);
+
+        const listRes = await Store.list("tfd_solicitacoes:", true);
+        const keys = (listRes && listRes.keys) || [];
+        const all = (await Promise.all(keys.map(async k => {
+          try{ const r = await Store.get(k, true); return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
+        }))).filter(Boolean);
+
+        const doDia = all
+          .filter(p => p.motoristaId === motoristaId && p.dataViagem === data && p.status === "Agendado")
+          .sort((a,b) => (a.horarioSaida||"").localeCompare(b.horarioSaida||""));
+
+        setPacientes(doDia);
+        const inicial = {};
+        doDia.forEach(p => { inicial[p.id] = p.resultadoViagem || "Realizada"; });
+        setDesfechos(inicial);
+      }catch(e){
+        setErro("Não foi possível carregar os dados desta rota. Verifique sua conexão e tente novamente.");
+      }
+      setLoading(false);
+    })();
+  }, [motoristaId, data]);
+
+  const confirmarTudo = async () => {
+    setSaving(true);
+    try{
+      const hoje = new Date().toISOString().slice(0,10);
+      for(const p of pacientes){
+        await Store.set("tfd_solicitacoes:" + p.id, JSON.stringify({
+          ...p,
+          resultadoViagem: desfechos[p.id],
+          dataRealizacao: hoje
+        }), true);
+      }
+      setDone(true);
+    }catch(e){
+      setErro("Ocorreu um erro ao salvar a confirmação. Tente novamente.");
+    }
+    setSaving(false);
+  };
+
+  const dataFormatada = data ? new Date(data+"T00:00").toLocaleDateString('pt-BR') : "";
+
+  return <div style={{minHeight:"100vh", background:"var(--bg)", padding:"24px 16px"}}>
+    <div className="card" style={{maxWidth:640, margin:"0 auto"}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <img src={BRASAO_LOGO_URI} alt="Brasão do município" style={{width:52, height:52, objectFit:"contain"}} />
+        <div>
+          <div style={{fontSize:16, fontWeight:700}}>Confirmação de viagem — TFD</div>
+          <div style={{fontSize:13, color:"var(--muted)"}}>{motorista ? motorista.nome : "Motorista"} {dataFormatada && "· " + dataFormatada}</div>
+        </div>
+      </div>
+
+      {loading && <div className="empty-state"><IconVan/><div>Carregando dados da rota...</div></div>}
+
+      {!loading && erro && (
+        <div className="empty-state"><IconVan/><div>{erro}</div></div>
+      )}
+
+      {!loading && !erro && !done && pacientes.length === 0 && (
+        <div className="empty-state"><IconVan/><div>Nenhuma viagem agendada foi encontrada para este link. Ela já pode ter sido confirmada, ou o link está incorreto.</div></div>
+      )}
+
+      {!loading && !erro && !done && pacientes.length > 0 && (
+        <>
+          <div style={{fontSize:13, color:"var(--muted)", marginBottom:16}}>
+            Marque o que aconteceu com cada paciente e depois toque em "Confirmar viagens". Por padrão, todos já estão marcados como "Realizada".
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:12}}>
+            {pacientes.map(p => (
+              <div key={p.id} className="card" style={{padding:14, background:"var(--bg)"}}>
+                <div style={{fontWeight:600, marginBottom:2}}>{p.nome}</div>
+                <div style={{fontSize:12.5, color:"var(--muted)", marginBottom:8}}>
+                  Destino: {p.local || "—"}{p.horarioSaida ? " · Saída: " + p.horarioSaida : ""}{p.acompanhante==="Sim" ? " · Com acompanhante" : ""}
+                </div>
+                <select
+                  value={desfechos[p.id] || "Realizada"}
+                  onChange={e => setDesfechos(d => ({...d, [p.id]: e.target.value}))}
+                >
+                  {RESULTADOS_VIAGEM.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div className="actions-row" style={{marginTop:18}}>
+            <button className="btn btn-primary" disabled={saving} onClick={confirmarTudo}>
+              {saving ? "Salvando..." : "Confirmar viagens"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {!loading && done && (
+        <div className="empty-state">
+          <IconVan/>
+          <div>Confirmação registrada com sucesso! Obrigado, {motorista ? motorista.nome : ""}.</div>
+        </div>
+      )}
     </div>
   </div>;
 }
@@ -1475,7 +1613,7 @@ function ListasTab({ listas, salvar, loading }){
   </div>;
 }
 
-function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
+function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
   const [data, setData] = useState("");
   const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
 
@@ -1551,6 +1689,22 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes }){
               <div style={{fontSize:12, color:"var(--muted)"}}>{g.motorista.tipoVeiculo}{g.motorista.placa ? " · " + g.motorista.placa : ""}</div>
             </div>
             <div style={{fontSize:13, fontWeight:600}}>{fmt(data)} — {g.pacientes.length} paciente{g.pacientes.length!==1?"s":""} · {g.pacientes.filter(p=>p.acompanhante==="Sim").length} acompanhante{g.pacientes.filter(p=>p.acompanhante==="Sim").length!==1?"s":""}</div>
+          </div>
+          <div className="hide-print" style={{display:"flex", gap:8, flexWrap:"wrap", marginBottom:14}}>
+            <button
+              className="btn btn-secondary"
+              onClick={async ()=>{
+                const link = linkConfirmacaoMotorista(g.motorista.id, data);
+                try{ await navigator.clipboard.writeText(link); notify && notify("Link de confirmação copiado!"); }
+                catch(e){ window.prompt("Copie o link abaixo:", link); }
+              }}
+            ><IconLink/> Copiar link de confirmação</button>
+            {whatsappLinkMotorista(g.motorista, data, g.pacientes.length) && (
+              <button className="btn btn-secondary" style={{color:"#25D366"}}
+                onClick={()=>window.open(whatsappLinkMotorista(g.motorista, data, g.pacientes.length), '_blank')}>
+                <IconWhatsapp/> Enviar ao motorista
+              </button>
+            )}
           </div>
           <table>
             <thead>
@@ -1662,7 +1816,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
     </div>
 
     {modo === "resumo-dia" ? (
-      <ResumoDiaTodosMotoristas motoristas={motoristas} solicitacoes={solicitacoes} />
+      <ResumoDiaTodosMotoristas motoristas={motoristas} solicitacoes={solicitacoes} notify={notify} />
     ) : (
     <div className="card">
     <div className="section-title hide-print">Selecionar motorista e filtros</div>
@@ -1700,6 +1854,29 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
       <button className="btn btn-primary" disabled={!motoristaId || selecionados.size===0} onClick={()=>window.print()}>
         <IconPrint/> Imprimir rota selecionada
       </button>
+      <button
+        className="btn btn-secondary"
+        disabled={!motoristaId || !dataFiltro}
+        title={!dataFiltro ? "Selecione uma data específica para gerar o link" : ""}
+        onClick={async ()=>{
+          const link = linkConfirmacaoMotorista(motoristaId, dataFiltro);
+          try{
+            await navigator.clipboard.writeText(link);
+            notify("Link de confirmação copiado!");
+          }catch(e){
+            window.prompt("Copie o link abaixo:", link);
+          }
+        }}
+      ><IconLink/> Copiar link de confirmação</button>
+      {(() => {
+        const mot = motoristas.find(m=>m.id===motoristaId);
+        const link = (mot && dataFiltro) ? whatsappLinkMotorista(mot, dataFiltro, filtrados.length) : null;
+        return link ? (
+          <button className="btn btn-secondary" style={{color:"#25D366"}} onClick={()=>window.open(link, '_blank')}>
+            <IconWhatsapp/> Enviar link ao motorista
+          </button>
+        ) : null;
+      })()}
       <span className="count-pill">{selecionados.size} de {filtrados.length} paciente{filtrados.length!==1?"s":""} selecionado{selecionados.size!==1?"s":""}</span>
       <span className="count-pill" style={{background:"#eef2ff", color:"#4338ca", border:"1px solid #e0e7ff"}}>
         {filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length} acompanhante{filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length!==1?"s":""} selecionado{filtrados.filter(p=>selecionados.has(p.id) && p.acompanhante==="Sim").length!==1?"s":""}
@@ -2128,8 +2305,19 @@ function App(){
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  const confirmarMotoristaId = params.get('confirmar');
+  const confirmarData = params.get('data');
+  const root = ReactDOM.createRoot(document.getElementById('app-root'));
+  if(confirmarMotoristaId && confirmarData){
+    root.render(<DriverConfirmView motoristaId={confirmarMotoristaId} data={confirmarData} />);
+  } else {
+    root.render(<App/>);
+  }
+})();
 </script>
+
 
 
 
