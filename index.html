@@ -384,10 +384,21 @@ function maskPhone(v){
   return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
 }
 
+// Converte o nome do motorista num texto simples para usar na URL (sem acentos/espaços)
+function slugifyNome(nome){
+  return (nome || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-+|-+$)/g, "");
+}
+
 // Monta o link público de confirmação de viagem para o motorista (sem login)
-function linkConfirmacaoMotorista(motoristaId, data){
+function linkConfirmacaoMotorista(motoristaId, data, nomeMotorista){
   const base = window.location.origin + window.location.pathname;
-  return `${base}?confirmar=${encodeURIComponent(motoristaId)}&data=${encodeURIComponent(data)}`;
+  const slug = slugifyNome(nomeMotorista);
+  const sufixoNome = slug ? `&motorista=${encodeURIComponent(slug)}` : "";
+  return `${base}?confirmar=${encodeURIComponent(motoristaId)}&data=${encodeURIComponent(data)}${sufixoNome}`;
 }
 
 
@@ -397,7 +408,7 @@ function whatsappLinkMotorista(motorista, data, qtdPacientes){
   if(!digits) return null;
   const comDDI = digits.length <= 11 ? "55" + digits : digits;
   const dataFormatada = data ? new Date(data+"T00:00").toLocaleDateString('pt-BR') : "";
-  const link = linkConfirmacaoMotorista(motorista.id, data);
+  const link = linkConfirmacaoMotorista(motorista.id, data, motorista.nome);
   const msg = `Olá, ${motorista.nome}! Sua rota do dia ${dataFormatada} tem ${qtdPacientes} paciente${qtdPacientes!==1?"s":""} agendado${qtdPacientes!==1?"s":""}.\n\nApós realizar a viagem, confirme os pacientes que embarcaram por este link:\n${link}`;
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
@@ -605,7 +616,7 @@ function PrintHeader({ subtitle }){
 
 // Página pública (sem login) que o motorista acessa pelo link enviado após a rota,
 // para confirmar o desfecho de cada paciente. Lê e grava direto no Supabase.
-function DriverConfirmView({ motoristaId, data }){
+function DriverConfirmView({ motoristaId, data, nomeSlug }){
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [motorista, setMotorista] = useState(null);
@@ -613,6 +624,19 @@ function DriverConfirmView({ motoristaId, data }){
   const [desfechos, setDesfechos] = useState({});
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Nome legível a partir do link (ex: "joao-silva" -> "Joao Silva"), usado como
+  // identificação imediata (título da aba, texto de carregamento) antes de os dados chegarem do banco
+  const nomeDoLink = useMemo(() => {
+    if(!nomeSlug) return "";
+    return nomeSlug.split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+  }, [nomeSlug]);
+
+  const nomeExibido = (motorista && motorista.nome) || nomeDoLink || "Motorista";
+
+  useEffect(() => {
+    document.title = `Confirmar viagem — ${nomeExibido}`;
+  }, [nomeExibido]);
 
   useEffect(() => {
     (async () => {
@@ -668,11 +692,11 @@ function DriverConfirmView({ motoristaId, data }){
         <img src={BRASAO_LOGO_URI} alt="Brasão do município" />
         <div>
           <div className="driver-confirm-title">Confirmação de viagem — TFD</div>
-          <div className="driver-confirm-sub">{motorista ? motorista.nome : "Motorista"} {dataFormatada && "· " + dataFormatada}</div>
+          <div className="driver-confirm-sub">{nomeExibido} {dataFormatada && "· " + dataFormatada}</div>
         </div>
       </div>
 
-      {loading && <div className="empty-state"><IconVan/><div>Carregando dados da rota...</div></div>}
+      {loading && <div className="empty-state"><IconVan/><div>Carregando a rota de {nomeExibido}...</div></div>}
 
       {!loading && erro && (
         <div className="empty-state"><IconVan/><div>{erro}</div></div>
@@ -714,7 +738,7 @@ function DriverConfirmView({ motoristaId, data }){
       {!loading && done && (
         <div className="empty-state">
           <IconVan/>
-          <div>Confirmação registrada com sucesso! Obrigado, {motorista ? motorista.nome : ""}.</div>
+          <div>Confirmação registrada com sucesso! Obrigado, {nomeExibido}.</div>
         </div>
       )}
     </div>
@@ -1747,7 +1771,7 @@ function ResumoDiaTodosMotoristas({ motoristas, solicitacoes, notify }){
             <button
               className="btn btn-secondary"
               onClick={async ()=>{
-                const link = linkConfirmacaoMotorista(g.motorista.id, data);
+                const link = linkConfirmacaoMotorista(g.motorista.id, data, g.motorista.nome);
                 try{ await navigator.clipboard.writeText(link); notify && notify("Link de confirmação copiado!"); }
                 catch(e){ window.prompt("Copie o link abaixo:", link); }
               }}
@@ -1912,7 +1936,8 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
         disabled={!motoristaId || !dataFiltro}
         title={!dataFiltro ? "Selecione uma data específica para gerar o link" : ""}
         onClick={async ()=>{
-          const link = linkConfirmacaoMotorista(motoristaId, dataFiltro);
+          const motSelecionado = motoristas.find(m=>m.id===motoristaId);
+          const link = linkConfirmacaoMotorista(motoristaId, dataFiltro, motSelecionado && motSelecionado.nome);
           try{
             await navigator.clipboard.writeText(link);
             notify("Link de confirmação copiado!");
@@ -2362,9 +2387,10 @@ function App(){
   const params = new URLSearchParams(window.location.search);
   const confirmarMotoristaId = params.get('confirmar');
   const confirmarData = params.get('data');
+  const confirmarNomeSlug = params.get('motorista');
   const root = ReactDOM.createRoot(document.getElementById('app-root'));
   if(confirmarMotoristaId && confirmarData){
-    root.render(<DriverConfirmView motoristaId={confirmarMotoristaId} data={confirmarData} />);
+    root.render(<DriverConfirmView motoristaId={confirmarMotoristaId} data={confirmarData} nomeSlug={confirmarNomeSlug} />);
   } else {
     root.render(<App/>);
   }
