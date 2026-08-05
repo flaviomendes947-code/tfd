@@ -1857,6 +1857,19 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
       });
   }, [porData, horarioFiltro]);
 
+  // Mesma lista, mas agrupada pelo ponto de referência — ajuda o motorista a identificar
+  // de uma vez quais pacientes pegar em cada ponto, em vez de ficar espalhado pela rota.
+  const rotaAgrupada = useMemo(() => {
+    return [...filtrados].sort((a,b) => {
+      const pa = (a.pontoReferencia || "").trim();
+      const pb = (b.pontoReferencia || "").trim();
+      if(!pa && pb) return 1;
+      if(pa && !pb) return -1;
+      if(pa !== pb) return pa.localeCompare(pb, 'pt-BR');
+      return 0; // mesmo ponto de referência: mantém a ordem por horário já definida em "filtrados"
+    });
+  }, [filtrados]);
+
   // Sempre que a lista filtrada muda (troca de motorista/filtros), marca todos por padrão.
   useEffect(() => {
     setSelecionados(new Set(filtrados.map(p => p.id)));
@@ -1978,7 +1991,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
       : filtrados.length === 0
         ? <div className="empty-state hide-print"><IconVan/><div>Nenhuma viagem agendada para este motorista com os filtros selecionados.</div></div>
         : <>
-          <PrintHeader subtitle={`Rota — ${motoristas.find(m=>m.id===motoristaId)?.nome || ""}${dataFiltro ? " — " + fmt(dataFiltro) : ""}`} />
+          <PrintHeader subtitle={`Rota — ${motoristas.find(m=>m.id===motoristaId)?.nome || ""}${dataFiltro ? " — " + fmt(dataFiltro) : ""} (ordenada por ponto de referência)`} />
           <div className="table-scroll"><table>
             <thead>
               <tr>
@@ -1989,7 +2002,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((p, i) => (
+              {rotaAgrupada.map((p, i) => (
                 <tr key={p.id} className={selecionados.has(p.id) ? "" : "hide-print"}>
                   <td className="hide-print">
                     <input type="checkbox" checked={selecionados.has(p.id)} onChange={()=>toggleUm(p.id)} />
