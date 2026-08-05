@@ -422,7 +422,7 @@ function whatsappConfirmacaoLink(p){
   const comDDI = digits.length <= 11 ? "55" + digits : digits;
   const dataFormatada = p.dataViagem ? new Date(p.dataViagem+"T00:00").toLocaleDateString('pt-BR') : "a definir";
   const horario = p.horarioSaida ? ` às ${p.horarioSaida}` : "";
-  const msg = `Olá, ${p.nome}! Confirmando seu transporte (TFD) agendado para ${dataFormatada}${horario}, com destino a ${p.local || "definir"}.\n\nPor favor, esteja pronto(a) no horário combinado. Caso não possa comparecer, avise-nos com antecedência.`;
+  const msg = `Olá, ${p.nome}! Confirmando seu transporte agendado para ${dataFormatada}${horario}, com destino a ${p.local || "definir"}.\n\nPor favor, esteja pronto(a) no horário combinado. Caso não possa comparecer, avise-nos com antecedência.`;
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -458,7 +458,7 @@ function IconSearch(){ return <svg width="15" height="15" viewBox="0 0 24 24" fi
 function IconUsers(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
 function IconCheck(){ return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>; }
 function IconVan(){ return <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17h1a2 2 0 0 0 4 0h8a2 2 0 0 0 4 0h1v-5l-3-4H7L3 12v5Z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/><path d="M14 8V5H5v7"/></svg>; }
-function IconCarHeader(){ return <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.6"><path d="M5 17H4a1 1 0 0 1-1-1v-4l2.2-4.4A2 2 0 0 1 7 6.4h10a2 2 0 0 1 1.8 1.2L21 12v4a1 1 0 0 1-1 1h-1"/><path d="M5 17h14"/><circle cx="7.5" cy="17" r="1.8"/><circle cx="16.5" cy="17" r="1.8"/></svg>; }
+function IconCarHeader(){ return <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>; }
 function IconList(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>; }
 function IconPrint(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>; }
 function IconDashboard(){ return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>; }
@@ -2395,7 +2395,7 @@ function App(){
   return <div>
     <div className="header hide-print">
       <div className="logo"><IconCarHeader/></div>
-      <div><h1>TRANSPORTE FORA DO DOMICÍLIO (TFD)</h1><p>Agendamento e controle de viagens intermunicipais para tratamento de saúde</p></div>
+      <div><h1>Agendamento Transporte</h1><p>Agendamento e controle de viagens intermunicipais para tratamento de saúde</p></div>
       <img src={BRASAO_LOGO_URI} alt="Brasão do município" className="app-header-logo" style={{marginLeft:"auto", width:48, height:48, objectFit:"contain", flexShrink:0}} />
     </div>
 
@@ -2484,7 +2484,6 @@ function App(){
 </script>
 </body>
 </html>
-
 
 
 
