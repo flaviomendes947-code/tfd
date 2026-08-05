@@ -793,6 +793,13 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
 
   const [buscaPaciente, setBuscaPaciente] = useState("");
 
+  // Pontos de referência já usados em cadastros anteriores, para sugerir no autocompletar do campo
+  const pontosReferenciaExistentes = useMemo(() => {
+    const set = new Set();
+    solicitacoes.forEach(p => { if(p.pontoReferencia && p.pontoReferencia.trim()) set.add(p.pontoReferencia.trim()); });
+    return Array.from(set).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  }, [solicitacoes]);
+
   // Lista de pacientes já cadastrados (um por CPF/CNS), com dados pessoais mais recentes e total de viagens.
   const pacientesConhecidos = useMemo(() => {
     const map = new Map();
@@ -939,7 +946,18 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     </div>
     <div className="grid grid-2" style={{marginTop:16}}>
       <Field label="Endereço"><input placeholder="Rua, número, bairro, cidade" value={form.endereco} onChange={set('endereco')} /></Field>
-      <Field label="Ponto de referência"><input placeholder="Ex: perto da praça, próximo ao mercado..." value={form.pontoReferencia} onChange={set('pontoReferencia')} /></Field>
+      <Field label="Ponto de referência">
+        <input
+          placeholder="Ex: perto da praça, próximo ao mercado..."
+          value={form.pontoReferencia}
+          onChange={set('pontoReferencia')}
+          list="lista-pontos-referencia"
+          autoComplete="off"
+        />
+        <datalist id="lista-pontos-referencia">
+          {pontosReferenciaExistentes.map(pr => <option key={pr} value={pr} />)}
+        </datalist>
+      </Field>
     </div>
 
     <div className="section-title">Dados da viagem</div>
@@ -2466,7 +2484,6 @@ function App(){
 </script>
 </body>
 </html>
-
 
 
 
