@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Sistema TFD</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3b6ff0">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TFD Transporte">
 </head>
 <body style="margin:0;">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -353,6 +361,66 @@
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// Nome de quem está usando o sistema neste navegador, usado no histórico de alterações.
+// Pedido uma vez e guardado no navegador (não é um login de verdade).
+function getOperadorNome(){
+  try{
+    let nome = localStorage.getItem("tfd_operador_nome");
+    if(!nome){
+      nome = window.prompt("Antes de começar: qual o seu nome? (fica registrado nas alterações que você fizer)", "") || "";
+      nome = nome.trim();
+      if(nome) localStorage.setItem("tfd_operador_nome", nome);
+    }
+    return nome || "Não identificado";
+  }catch(e){ return "Não identificado"; }
+}
+function setOperadorNome(nome){
+  try{ localStorage.setItem("tfd_operador_nome", (nome||"").trim()); }catch(e){}
+}
+
+// Campos da solicitação que valem a pena registrar no histórico de alterações
+const CAMPOS_HISTORICO = {
+  status:"Status", motoristaId:"Motorista", dataViagem:"Data da viagem", horarioSaida:"Horário de saída",
+  destino:"Destino", local:"Local", motivo:"Motivo", telefone:"Telefone", telefone2:"Telefone 2",
+  endereco:"Endereço", pontoReferencia:"Ponto de referência", resultadoViagem:"Desfecho da viagem",
+  obs:"Observação", tipoTransporte:"Tipo de veículo", acompanhante:"Acompanhante"
+};
+
+// Grava uma entrada no histórico de alterações de uma solicitação (criação ou edição)
+async function logAlteracaoSolicitacao(antigo, novo){
+  try{
+    const operador = getOperadorNome();
+    const quando = Date.now();
+    let mudancas = [];
+    if(!antigo){
+      mudancas = [{ campo: "Cadastro", de: null, para: "Solicitação criada" }];
+    } else {
+      Object.keys(CAMPOS_HISTORICO).forEach(campo => {
+        const de = antigo[campo] ?? "";
+        const para = novo[campo] ?? "";
+        if(String(de) !== String(para)){
+          mudancas.push({ campo: CAMPOS_HISTORICO[campo], de: de || "—", para: para || "—" });
+        }
+      });
+      if(mudancas.length === 0) return; // nada relevante mudou, não polui o histórico
+    }
+    const entry = { solicitacaoId: novo.id, quando, operador, acao: antigo ? "Edição" : "Criação", mudancas };
+    await Store.set(`tfd_log:${novo.id}:${quando}`, JSON.stringify(entry), true);
+  }catch(e){ /* histórico é best-effort, não deve travar o salvamento principal */ }
+}
+
+// Busca o histórico de alterações de uma solicitação específica
+async function carregarHistoricoAlteracoes(solicitacaoId){
+  try{
+    const listRes = await Store.list(`tfd_log:${solicitacaoId}:`, true);
+    const keys = (listRes && listRes.keys) ? listRes.keys : [];
+    const results = await Promise.all(keys.map(async k => {
+      try{ const r = await Store.get(k, true); return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
+    }));
+    return results.filter(Boolean).sort((a,b) => b.quando - a.quando);
+  }catch(e){ return []; }
+}
 
 function onlyDigits(v){ return (v||"").replace(/\D/g, ""); }
 
@@ -861,6 +929,31 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       notify("Telefone inválido. Informe DDD + número.");
       return;
     }
+    const ddd = Number(phoneDigits.slice(0,2));
+    if(ddd < 11 || ddd > 99){
+      notify("Telefone inválido: DDD fora do intervalo válido (11 a 99).");
+      return;
+    }
+
+    // Alerta de paciente parecido já cadastrado (nome igual com CPF diferente, ou CPF igual com nome diferente) —
+    // ajuda a evitar cadastro duplicado por erro de digitação. Não bloqueia, só avisa.
+    const normNome = (s) => (s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const nomeDigitado = normNome(form.nome);
+    const parecido = solicitacoes.find(s => {
+      if(s.id === form.id) return false;
+      const mesmoCpf = onlyDigits(s.cpf||"") === cpfDigits;
+      const mesmoNome = normNome(s.nome) === nomeDigitado;
+      return (mesmoCpf && !mesmoNome) || (mesmoNome && !mesmoCpf);
+    });
+    if(parecido){
+      const motivo = onlyDigits(parecido.cpf||"") === cpfDigits
+        ? `o mesmo CPF/CNS já está cadastrado para "${parecido.nome}"`
+        : `já existe um paciente chamado "${parecido.nome}" com CPF/CNS diferente`;
+      const confirmar = window.confirm(
+        `Atenção: ${motivo}. Isso pode ser um cadastro duplicado (erro de digitação) ou apenas uma coincidência de nome.\n\nDeseja continuar mesmo assim?`
+      );
+      if(!confirmar) return;
+    }
 
     const datasValidas = [...new Set([form.dataViagem, ...datasExtras.filter(Boolean)])].sort();
 
@@ -1347,12 +1440,39 @@ function JsonViewerModal({ solicitacoes, motoristas, onClose, notify }){
   </div>;
 }
 
-function ExportTab({ solicitacoes, motoristas, notify }){
+function ExportTab({ solicitacoes, motoristas, listas, notify }){
   const [showJson, setShowJson] = useState(false);
   const [pdfDataIni, setPdfDataIni] = useState("");
   const [pdfDataFim, setPdfDataFim] = useState("");
   const [pdfStatus, setPdfStatus] = useState("");
   const [pdfDesfecho, setPdfDesfecho] = useState("");
+  const [ultimoBackup, setUltimoBackup] = useState(() => {
+    try{ return Number(localStorage.getItem("tfd_ultimo_backup")) || null; }catch(e){ return null; }
+  });
+
+  const DIAS_AVISO_BACKUP = 7;
+  const diasSemBackup = ultimoBackup ? Math.floor((Date.now() - ultimoBackup) / 86400000) : null;
+  const backupAtrasado = diasSemBackup === null || diasSemBackup >= DIAS_AVISO_BACKUP;
+
+  const fazerBackupCompleto = () => {
+    const payload = {
+      geradoEm: new Date().toISOString(),
+      solicitacoes, motoristas, listas
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup-tfd-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const agora = Date.now();
+    try{ localStorage.setItem("tfd_ultimo_backup", String(agora)); }catch(e){}
+    setUltimoBackup(agora);
+    notify("Backup completo baixado");
+  };
 
   const exportSolicitacoes = () => {
     const motoristaName = (id) => { const m = motoristas.find(x=>x.id===id); return m ? m.nome : ""; };
@@ -1446,7 +1566,26 @@ function ExportTab({ solicitacoes, motoristas, notify }){
   };
 
   return <div className="card">
-    <div className="section-title" style={{marginTop:0}}>Relatório em PDF</div>
+    <div className="section-title" style={{marginTop:0}}>Backup completo</div>
+    {backupAtrasado && (
+      <div className="banner" style={{background:"#fef2f2", borderColor:"#fecaca", color:"#991b1b", marginBottom:14}}>
+        <span>⚠</span>
+        <span>
+          {ultimoBackup ? `Já se passaram ${diasSemBackup} dia${diasSemBackup!==1?"s":""} desde o último backup.` : "Nenhum backup foi feito neste navegador ainda."} Recomendamos fazer um backup pelo menos toda semana.
+        </span>
+      </div>
+    )}
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:12}}>
+      Baixa um arquivo único (.json) com todos os dados do sistema — solicitações, motoristas e listas — como uma cópia de segurança independente do Supabase.
+      {ultimoBackup && <><br/>Último backup feito neste navegador: <b>{new Date(ultimoBackup).toLocaleString('pt-BR')}</b>.</>}
+    </p>
+    <div className="actions-row" style={{marginBottom:6}}>
+      <button className="btn btn-primary" onClick={fazerBackupCompleto}>
+        <IconDownload/> Fazer backup completo agora
+      </button>
+    </div>
+
+    <div className="section-title">Relatório em PDF</div>
     <p style={{color:'var(--muted)', fontSize:13, marginBottom:16}}>Gere um relatório formatado, ideal para prestar contas à secretaria. Use os filtros abaixo para restringir o período ou o tipo de registro (deixe em branco para incluir tudo).</p>
     <div className="grid grid-2">
       <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
@@ -2046,6 +2185,77 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
   </div>;
 }
 
+// Painel de pendências de lembrete: mostra quem tem viagem numa data e se já foi lembrado.
+// Não há envio automático (isso exigiria uma API paga do WhatsApp) — cada lembrete é enviado
+// com um clique, e fica registrado o horário de envio e quem enviou.
+function LembretesTab({ solicitacoes, salvar, notify }){
+  const amanha = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); };
+  const [data, setData] = useState(amanha());
+  const [enviandoId, setEnviandoId] = useState(null);
+  const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
+
+  const pendentes = useMemo(() => {
+    return solicitacoes
+      .filter(p => p.dataViagem === data && !["Cancelada pela secretaria", "Cancelada pelo paciente"].includes(p.resultadoViagem))
+      .sort((a,b) => (a.horarioSaida||"").localeCompare(b.horarioSaida||""));
+  }, [solicitacoes, data]);
+
+  const naoEnviados = pendentes.filter(p => !p.lembreteEnviadoEm).length;
+
+  const enviarLembrete = async (p) => {
+    const link = whatsappConfirmacaoLink(p);
+    if(!link){ notify(`${p.nome} não tem telefone cadastrado.`); return; }
+    setEnviandoId(p.id);
+    window.open(link, '_blank');
+    await salvar({ ...p, lembreteEnviadoEm: Date.now(), lembreteEnviadoPor: getOperadorNome() });
+    setEnviandoId(null);
+    notify("Lembrete registrado para " + p.nome);
+  };
+
+  return <div className="card">
+    <div className="section-title" style={{marginTop:0}}>Lembretes de viagem</div>
+    <p style={{color:'var(--muted)', fontSize:13, marginBottom:16}}>
+      Veja quem tem viagem numa data e envie o lembrete de confirmação com um clique. Fica registrado o horário do envio — não existe envio automático, é preciso confirmar cada um pelo WhatsApp.
+    </p>
+    <div className="grid grid-2" style={{marginBottom:16}}>
+      <Field label="Data da viagem"><input type="date" value={data} onChange={e=>setData(e.target.value)} /></Field>
+    </div>
+
+    {pendentes.length === 0 ? (
+      <div className="empty-state"><IconVan/><div>Nenhuma viagem agendada para {fmt(data)}.</div></div>
+    ) : (
+      <>
+        <p style={{fontSize:13, marginBottom:12}}>
+          {pendentes.length} paciente(s) agendado(s) para {fmt(data)}{naoEnviados > 0 ? ` — ${naoEnviados} sem lembrete enviado` : " — todos já foram lembrados"}.
+        </p>
+        <div className="table-scroll"><table>
+          <thead><tr><th>Paciente</th><th>Horário</th><th>Destino</th><th>Telefone</th><th>Lembrete</th><th></th></tr></thead>
+          <tbody>
+            {pendentes.map(p => (
+              <tr key={p.id}>
+                <td style={{fontWeight:600}}>{p.nome}</td>
+                <td>{p.horarioSaida || "—"}</td>
+                <td>{p.local || p.destino || "—"}</td>
+                <td>{p.telefone || "—"}</td>
+                <td>
+                  {p.lembreteEnviadoEm
+                    ? <span style={{color:"#16a34a", fontSize:12.5}}>Enviado {new Date(p.lembreteEnviadoEm).toLocaleString('pt-BR')}<br/>por {p.lembreteEnviadoPor || "—"}</span>
+                    : <span style={{color:"var(--muted)", fontSize:12.5}}>Não enviado</span>}
+                </td>
+                <td>
+                  <button className="btn btn-secondary" style={{color:"#25D366"}} disabled={enviandoId===p.id} onClick={()=>enviarLembrete(p)}>
+                    <IconWhatsapp/> {p.lembreteEnviadoEm ? "Reenviar" : "Enviar"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      </>
+    )}
+  </div>;
+}
+
 function PatientHistoryTab({ solicitacoes, motoristas }){
   const [q, setQ] = useState("");
   const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
@@ -2094,25 +2304,78 @@ function PatientHistoryTab({ solicitacoes, motoristas }){
             <span className="count-pill">{pac.viagens.length} viage{pac.viagens.length!==1?"ns":"m"}</span>
           </div>
           <div className="table-scroll"><table>
-            <thead><tr><th>Data</th><th>Destino</th><th>Local</th><th>Motivo</th><th>Motorista</th><th>Status</th><th>Desfecho</th></tr></thead>
+            <thead><tr><th>Data</th><th>Destino</th><th>Local</th><th>Motivo</th><th>Motorista</th><th>Status</th><th>Desfecho</th><th>Histórico</th></tr></thead>
             <tbody>
-              {pac.viagens.map(v => (
-                <tr key={v.id}>
-                  <td>{fmt(v.dataViagem)}</td>
-                  <td>{v.destino || "—"}</td>
-                  <td>{v.local || "—"}</td>
-                  <td>{v.motivo || "—"}</td>
-                  <td>{v.status === "Agendado" ? motoristaName(v.motoristaId) : "—"}</td>
-                  <td><StatusBadge status={v.status}/></td>
-                  <td>{v.resultadoViagem || "—"}</td>
-                </tr>
-              ))}
+              {pac.viagens.map(v => <LinhaViagemComHistorico key={v.id} v={v} fmt={fmt} motoristaName={motoristaName} />)}
             </tbody>
           </table></div>
         </div>
       ))
     )}
   </div>;
+}
+
+// Uma linha da tabela de viagens do paciente, com um botão para expandir o histórico
+// de alterações daquela solicitação específica (carregado sob demanda).
+function LinhaViagemComHistorico({ v, fmt, motoristaName }){
+  const [aberto, setAberto] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [log, setLog] = useState(null);
+
+  const toggle = async () => {
+    if(!aberto && log === null){
+      setCarregando(true);
+      const entradas = await carregarHistoricoAlteracoes(v.id);
+      setLog(entradas);
+      setCarregando(false);
+    }
+    setAberto(a => !a);
+  };
+
+  return <>
+    <tr>
+      <td>{fmt(v.dataViagem)}</td>
+      <td>{v.destino || "—"}</td>
+      <td>{v.local || "—"}</td>
+      <td>{v.motivo || "—"}</td>
+      <td>{v.status === "Agendado" ? motoristaName(v.motoristaId) : "—"}</td>
+      <td><StatusBadge status={v.status}/></td>
+      <td>{v.resultadoViagem || "—"}</td>
+      <td>
+        <button className="btn btn-secondary" style={{padding:"6px 10px", fontSize:12}} onClick={toggle}>
+          {aberto ? "Ocultar" : "Ver"}
+        </button>
+      </td>
+    </tr>
+    {aberto && (
+      <tr>
+        <td colSpan={8} style={{background:"var(--panel2)"}}>
+          {carregando ? (
+            <div style={{fontSize:12.5, color:"var(--muted)", padding:"6px 2px"}}>Carregando histórico...</div>
+          ) : !log || log.length === 0 ? (
+            <div style={{fontSize:12.5, color:"var(--muted)", padding:"6px 2px"}}>Nenhum registro de alteração encontrado para esta solicitação.</div>
+          ) : (
+            <div style={{display:"flex", flexDirection:"column", gap:8, padding:"8px 2px"}}>
+              {log.map((entry, i) => (
+                <div key={i} style={{fontSize:12.5}}>
+                  <div style={{fontWeight:600}}>
+                    {entry.acao} por {entry.operador} — {new Date(entry.quando).toLocaleString('pt-BR')}
+                  </div>
+                  {entry.mudancas && entry.mudancas.length > 0 && (
+                    <ul style={{margin:"4px 0 0 18px", color:"var(--muted)"}}>
+                      {entry.mudancas.map((m, j) => (
+                        <li key={j}>{m.campo}: {m.de === null ? m.para : `"${m.de}" → "${m.para}"`}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </td>
+      </tr>
+    )}
+  </>;
 }
 
 function LocalChartModal({ data, max, hasFilter, onClose }){
@@ -2379,6 +2642,26 @@ function App(){
   const mot = useCollection("tfd_motoristas:");
   const listasCfg = useListasOpcoes();
 
+  // Salva a solicitação e, em seguida, registra no histórico o que mudou (best-effort)
+  const salvarSolicitacao = useCallback(async (record) => {
+    const antigo = record.id ? sol.items.find(x => x.id === record.id) : null;
+    const salvo = await sol.save(record);
+    logAlteracaoSolicitacao(antigo, salvo);
+    return salvo;
+  }, [sol]);
+
+  useEffect(() => { getOperadorNome(); }, []);
+
+  // Pendências de lembrete para amanhã, usadas no aviso automático abaixo
+  const pendenciasAmanha = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate()+1);
+    const amanha = d.toISOString().slice(0,10);
+    return sol.items.filter(p =>
+      p.dataViagem === amanha && !p.lembreteEnviadoEm &&
+      !["Cancelada pela secretaria", "Cancelada pelo paciente"].includes(p.resultadoViagem)
+    ).length;
+  }, [sol.items]);
+
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2600); };
 
   const tabs = [
@@ -2387,6 +2670,7 @@ function App(){
     {id:"solicitacoes", label:"Solicitações", icon:<IconClipboardList/>},
     {id:"motoristas", label:"Motoristas / Veículos", icon:<IconVan/>},
     {id:"imprimir-rota", label:"Imprimir Rota", icon:<IconPrint/>},
+    {id:"lembretes", label:"Lembretes", icon:<IconWhatsapp/>},
     {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconLayers/>},
     {id:"historico-paciente", label:"Histórico do paciente", icon:<IconHistory/>},
     {id:"exportar", label:"Exportar", icon:<IconDownload/>},
@@ -2399,10 +2683,23 @@ function App(){
       <img src={BRASAO_LOGO_URI} alt="Brasão do município" className="app-header-logo" style={{marginLeft:"auto", width:48, height:48, objectFit:"contain", flexShrink:0}} />
     </div>
 
+    <div className="hide-print" style={{textAlign:"right", fontSize:12, color:"var(--muted)", marginTop:-8, marginBottom:8}}>
+      Operador(a): <b>{getOperadorNome()}</b> ·{" "}
+      <a href="#" onClick={e=>{ e.preventDefault(); const novo = window.prompt("Seu nome:", getOperadorNome()); if(novo && novo.trim()) { setOperadorNome(novo); notify("Nome atualizado para " + novo.trim()); } }}>trocar</a>
+    </div>
+
     <div className="banner hide-print">
       <span>⚠</span>
       <span>Versão de transição: dados compartilhados entre a equipe via este link. Trate o acesso como confidencial e não compartilhe fora da equipe.</span>
     </div>
+
+    {pendenciasAmanha > 0 && (
+      <div className="banner hide-print" style={{background:"#fff7ed", borderColor:"#fed7aa", color:"#9a3412", cursor:"pointer"}}
+        onClick={()=>setTab("lembretes")}>
+        <span>🔔</span>
+        <span>{pendenciasAmanha} paciente{pendenciasAmanha!==1?"s":""} com viagem amanhã ainda sem lembrete enviado. Toque para ver a lista.</span>
+      </div>
+    )}
 
     <div className="tabs hide-print">
       {tabs.map(t => (
@@ -2417,7 +2714,7 @@ function App(){
     )}
 
     {tab === "cadastro" && (
-      <SolicitacaoForm save={sol.save} notify={notify}
+      <SolicitacaoForm save={salvarSolicitacao} notify={notify}
         motoristas={mot.items}
         solicitacoes={sol.items}
         listas={listasCfg.listas}
@@ -2429,7 +2726,7 @@ function App(){
     {tab === "solicitacoes" && (
       <SolicitacoesList solicitacoes={sol.items} loading={sol.loading}
         motoristas={mot.items}
-        save={sol.save}
+        save={salvarSolicitacao}
         onEdit={(p)=>{ setEditingSolicitacao(p); setTab("cadastro"); }}
         onDelete={(p)=>setConfirmDel(p)} />
     )}
@@ -2442,6 +2739,10 @@ function App(){
       <ImprimirRotaTab motoristas={mot.items} solicitacoes={sol.items} notify={notify} />
     )}
 
+    {tab === "lembretes" && (
+      <LembretesTab solicitacoes={sol.items} salvar={salvarSolicitacao} notify={notify} />
+    )}
+
     {tab === "listas" && (
       <ListasTab listas={listasCfg.listas} loading={listasCfg.loading} salvar={listasCfg.salvar} />
     )}
@@ -2451,7 +2752,7 @@ function App(){
     )}
 
     {tab === "exportar" && (
-      <ExportTab solicitacoes={sol.items} motoristas={mot.items} notify={notify} />
+      <ExportTab solicitacoes={sol.items} motoristas={mot.items} listas={listasCfg.listas} notify={notify} />
     )}
 
     {confirmDel && (() => {
@@ -2481,6 +2782,16 @@ function App(){
     root.render(<App/>);
   }
 })();
+</script>
+
+<script>
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(e){
+        console.warn("Não foi possível registrar o service worker (app continua funcionando normalmente):", e);
+      });
+    });
+  }
 </script>
 </body>
 </html>
