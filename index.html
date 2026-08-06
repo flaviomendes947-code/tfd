@@ -2633,178 +2633,9 @@ function DashboardTab({ solicitacoes }){
   </div>;
 }
 
-// ===================== Login / controle de acesso =====================
-// Papel "admin": acesso completo. Papel "leitor": só enxerga o Dashboard.
-// O primeiro e-mail a se cadastrar vira admin automaticamente; os próximos
-// entram como "leitor" e esperam um admin promovê-los (aba "Usuários").
 
-function useAuth(){
-  const [session, setSession] = useState(undefined); // undefined = carregando, null = deslogado
-  const [perfil, setPerfil] = useState(undefined);
-
-  useEffect(() => {
-    if(!window.sb){ setSession(null); return; }
-    window.sb.auth.getSession().then(({data}) => setSession(data.session || null));
-    const { data: sub } = window.sb.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if(session === undefined) return;
-    if(!session){ setPerfil(null); return; }
-    (async () => {
-      const key = "tfd_perfil:" + session.user.id;
-      let r = await Store.get(key, true);
-      if(!r){
-        // Primeiro acesso deste usuário: cria o perfil dele.
-        // Se ainda não existe NENHUM perfil no sistema, este vira admin (bootstrap); senão, leitor.
-        const listaExistente = await Store.list("tfd_perfil:", true);
-        const ehPrimeiro = !listaExistente || !listaExistente.keys || listaExistente.keys.length === 0;
-        const novoPerfil = { userId: session.user.id, email: session.user.email, role: ehPrimeiro ? "admin" : "leitor" };
-        await Store.set(key, JSON.stringify(novoPerfil), true);
-        setPerfil(novoPerfil);
-      } else {
-        setPerfil(JSON.parse(r.value));
-      }
-    })();
-  }, [session]);
-
-  const logout = async () => { if(window.sb) await window.sb.auth.signOut(); };
-
-  return { session, perfil, loading: session === undefined || (session && perfil === undefined), logout };
-}
-
-function LoginScreen(){
-  const [modo, setModo] = useState("entrar"); // "entrar" | "cadastrar"
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState("");
-  const [carregando, setCarregando] = useState(false);
-  const [avisoCadastro, setAvisoCadastro] = useState("");
-
-  const submeter = async () => {
-    setErro(""); setAvisoCadastro("");
-    if(!email || !senha){ setErro("Preencha e-mail e senha."); return; }
-    if(!window.sb){ setErro("Sistema sem conexão com o banco de dados."); return; }
-    setCarregando(true);
-    try{
-      if(modo === "entrar"){
-        const { error } = await window.sb.auth.signInWithPassword({ email, password: senha });
-        if(error) setErro(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : error.message);
-      } else {
-        if(senha.length < 6){ setErro("A senha precisa ter pelo menos 6 caracteres."); setCarregando(false); return; }
-        const { error } = await window.sb.auth.signUp({ email, password: senha });
-        if(error) setErro(error.message);
-        else setAvisoCadastro("Conta criada! Se a confirmação por e-mail estiver ativa no Supabase, confirme o e-mail antes de entrar. Senão, já pode entrar normalmente.");
-      }
-    }catch(e){ setErro("Falha inesperada: " + (e.message||e)); }
-    setCarregando(false);
-  };
-
-  return <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)", padding:16}}>
-    <div className="card" style={{maxWidth:380, width:"100%"}}>
-      <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:18}}>
-        <img src={BRASAO_LOGO_URI} alt="" style={{width:40, height:40, objectFit:"contain"}} />
-        <div style={{fontWeight:800, fontSize:16}}>Agendamento Transporte</div>
-      </div>
-      <div className="section-title" style={{marginTop:0}}>{modo === "entrar" ? "Entrar" : "Criar conta"}</div>
-      <Field label="E-mail"><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seuemail@exemplo.com" /></Field>
-      <Field label="Senha"><input type="password" value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" onKeyDown={e=>{ if(e.key==="Enter") submeter(); }} /></Field>
-      {erro && <p style={{color:"#dc2626", fontSize:13, marginBottom:10}}>{erro}</p>}
-      {avisoCadastro && <p style={{color:"#16a34a", fontSize:13, marginBottom:10}}>{avisoCadastro}</p>}
-      <div className="actions-row" style={{marginTop:6}}>
-        <button className="btn btn-primary" style={{width:"100%"}} disabled={carregando} onClick={submeter}>
-          {carregando ? "Aguarde..." : (modo === "entrar" ? "Entrar" : "Criar conta")}
-        </button>
-      </div>
-      <p style={{fontSize:12.5, color:"var(--muted)", marginTop:14, textAlign:"center"}}>
-        {modo === "entrar" ? (
-          <>Ainda não tem conta? <a href="#" onClick={e=>{e.preventDefault(); setModo("cadastrar"); setErro(""); setAvisoCadastro("");}}>Criar conta</a></>
-        ) : (
-          <>Já tem conta? <a href="#" onClick={e=>{e.preventDefault(); setModo("entrar"); setErro(""); setAvisoCadastro("");}}>Entrar</a></>
-        )}
-      </p>
-      <p style={{fontSize:11.5, color:"var(--muted)", marginTop:10, textAlign:"center"}}>
-        O primeiro e-mail cadastrado no sistema vira administrador automaticamente. Os seguintes entram como leitor, até um admin liberar mais acesso.
-      </p>
-    </div>
-  </div>;
-}
-
-// Aba visível só para admin: lista quem já entrou no sistema e permite mudar o papel de cada um
-function UsuariosTab({ meuUserId }){
-  const [usuarios, setUsuarios] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const carregar = useCallback(async () => {
-    setLoading(true);
-    const listRes = await Store.list("tfd_perfil:", true);
-    const keys = (listRes && listRes.keys) ? listRes.keys : [];
-    const results = await Promise.all(keys.map(async k => {
-      try{ const r = await Store.get(k, true); return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
-    }));
-    setUsuarios(results.filter(Boolean).sort((a,b) => (a.email||"").localeCompare(b.email||"")));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { carregar(); }, [carregar]);
-
-  const mudarPapel = async (u, novoRole) => {
-    await Store.set("tfd_perfil:" + u.userId, JSON.stringify({ ...u, role: novoRole }), true);
-    notifyGlobal && notifyGlobal(`${u.email} agora é ${novoRole === "admin" ? "administrador" : "leitor"}`);
-    carregar();
-  };
-
-  return <div className="card">
-    <div className="section-title" style={{marginTop:0}}>Usuários com acesso</div>
-    <p style={{color:'var(--muted)', fontSize:13, marginBottom:16}}>
-      Administradores têm acesso completo ao sistema. Leitores só enxergam o Dashboard.
-    </p>
-    {loading ? (
-      <div className="empty-state"><IconVan/><div>Carregando...</div></div>
-    ) : usuarios.length === 0 ? (
-      <div className="empty-state"><IconVan/><div>Nenhum usuário encontrado.</div></div>
-    ) : (
-      <div className="table-scroll"><table>
-        <thead><tr><th>E-mail</th><th>Papel</th><th></th></tr></thead>
-        <tbody>
-          {usuarios.map(u => (
-            <tr key={u.userId}>
-              <td>{u.email}{u.userId===meuUserId ? " (você)" : ""}</td>
-              <td><StatusBadge status={u.role === "admin" ? "Agendado" : "Lista de espera"}/> {u.role === "admin" ? "Administrador" : "Leitor"}</td>
-              <td>
-                {u.userId !== meuUserId && (
-                  <button className="btn btn-secondary" onClick={()=>mudarPapel(u, u.role === "admin" ? "leitor" : "admin")}>
-                    Tornar {u.role === "admin" ? "leitor" : "admin"}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table></div>
-    )}
-  </div>;
-}
-
-let notifyGlobal = null; // pequeno atalho para o UsuariosTab conseguir mostrar toast sem precisar passar prop extra
-
-function AuthGate(){
-  const { session, perfil, loading, logout } = useAuth();
-
-  if(loading){
-    return <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:"var(--muted)"}}>Carregando...</div>;
-  }
-  if(!session){
-    return <LoginScreen/>;
-  }
-  return <App perfil={perfil} onLogout={logout} />;
-}
-// ===================== fim login / controle de acesso =====================
-
-function App({ perfil, onLogout }){
-  const isAdmin = perfil && perfil.role === "admin";
-  const [tab, setTab] = useState(isAdmin ? "cadastro" : "dashboard");
+function App(){
+  const [tab, setTab] = useState("cadastro");
   const [toast, setToast] = useState("");
   const [editingSolicitacao, setEditingSolicitacao] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -2823,9 +2654,6 @@ function App({ perfil, onLogout }){
 
   useEffect(() => { getOperadorNome(); }, []);
 
-  // Leitor só pode ver o Dashboard — se por algum motivo o estado tentar ir pra outra aba, força de volta
-  useEffect(() => { if(!isAdmin && tab !== "dashboard") setTab("dashboard"); }, [isAdmin, tab]);
-
   // Pendências de lembrete para amanhã, usadas no aviso automático abaixo
   const pendenciasAmanha = useMemo(() => {
     const d = new Date(); d.setDate(d.getDate()+1);
@@ -2837,9 +2665,8 @@ function App({ perfil, onLogout }){
   }, [sol.items]);
 
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2600); };
-  notifyGlobal = notify;
 
-  const tabs = isAdmin ? [
+  const tabs = [
     {id:"dashboard", label:"Dashboard", icon:<IconDashboard/>},
     {id:"cadastro", label: editingSolicitacao ? "Editando solicitação" : "Nova solicitação", icon:<IconPlus/>},
     {id:"solicitacoes", label:"Solicitações", icon:<IconClipboardList/>},
@@ -2849,9 +2676,6 @@ function App({ perfil, onLogout }){
     {id:"listas", label:"Listas (Destino/Motivo/Local)", icon:<IconLayers/>},
     {id:"historico-paciente", label:"Histórico do paciente", icon:<IconHistory/>},
     {id:"exportar", label:"Exportar", icon:<IconDownload/>},
-    {id:"usuarios", label:"Usuários", icon:<IconSearch/>},
-  ] : [
-    {id:"dashboard", label:"Dashboard", icon:<IconDashboard/>},
   ];
 
   return <div>
@@ -2862,10 +2686,8 @@ function App({ perfil, onLogout }){
     </div>
 
     <div className="hide-print" style={{textAlign:"right", fontSize:12, color:"var(--muted)", marginTop:-8, marginBottom:8}}>
-      {perfil && <>{perfil.email} ({isAdmin ? "administrador" : "leitor"}) ·{" "}</>}
       Operador(a): <b>{getOperadorNome()}</b> ·{" "}
       <a href="#" onClick={e=>{ e.preventDefault(); const novo = window.prompt("Seu nome:", getOperadorNome()); if(novo && novo.trim()) { setOperadorNome(novo); notify("Nome atualizado para " + novo.trim()); } }}>trocar</a>
-      {" "}· <a href="#" onClick={e=>{ e.preventDefault(); onLogout && onLogout(); }}>sair</a>
     </div>
 
     <div className="banner hide-print">
@@ -2935,10 +2757,6 @@ function App({ perfil, onLogout }){
       <ExportTab solicitacoes={sol.items} motoristas={mot.items} listas={listasCfg.listas} notify={notify} />
     )}
 
-    {tab === "usuarios" && (
-      <UsuariosTab meuUserId={perfil && perfil.userId} />
-    )}
-
     {confirmDel && (() => {
       const vinculado = confirmDel.status === "Agendado" && confirmDel.motoristaId;
       const motoristaNome = vinculado ? (mot.items.find(x=>x.id===confirmDel.motoristaId)?.nome || "um motorista") : null;
@@ -2963,7 +2781,7 @@ function App({ perfil, onLogout }){
   if(confirmarMotoristaId && confirmarData){
     root.render(<DriverConfirmView motoristaId={confirmarMotoristaId} data={confirmarData} nomeSlug={confirmarNomeSlug} />);
   } else {
-    root.render(<AuthGate/>);
+    root.render(<App/>);
   }
 })();
 </script>
@@ -2979,8 +2797,5 @@ function App({ perfil, onLogout }){
 </script>
 </body>
 </html>
-
-
-
 
 
