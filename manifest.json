@@ -1,0 +1,16 @@
+{
+  "name": "Agendamento Transporte - TFD",
+  "short_name": "TFD Transporte",
+  "description": "Agendamento e controle de viagens intermunicipais para tratamento de saúde (TFD)",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f0f4f9",
+  "theme_color": "#3b6ff0",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
