@@ -3,7 +3,7 @@
 // Importante: os DADOS (pacientes, motoristas etc.) vêm do Supabase e exigem conexão —
 // o app abre offline, mas para ver/editar dados novos é preciso estar conectado.
 
-const CACHE_NAME = "tfd-shell-v1";
+const CACHE_NAME = "tfd-shell-v2";
 const ARQUIVOS_PARA_CACHE = [
   "./",
   "./index.html",
@@ -44,6 +44,26 @@ self.addEventListener("fetch", (event) => {
   // Nunca cachear chamadas ao Supabase (dados precisam vir sempre da rede, ao vivo)
   if (event.request.url.includes("supabase.co")) return;
 
+  const ehPaginaPrincipal = event.request.mode === "navigate" || event.request.url.endsWith("/index.html");
+
+  if (ehPaginaPrincipal) {
+    // Página principal: tenta sempre a rede primeiro, pra nunca travar numa versão antiga.
+    // Só usa o cache se estiver realmente sem internet.
+    event.respondWith(
+      fetch(event.request)
+        .then((resposta) => {
+          if (resposta && resposta.ok) {
+            const copia = resposta.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copia));
+          }
+          return resposta;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Demais arquivos (bibliotecas externas, ícones): cache primeiro, já que raramente mudam
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetchPromise = fetch(event.request)
