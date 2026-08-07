@@ -1180,6 +1180,8 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
   const [fTipoAgendamento, setFTipoAgendamento] = useState("");
   const [fDataIni, setFDataIni] = useState("");
   const [fDataFim, setFDataFim] = useState("");
+  const [fDataAgendIni, setFDataAgendIni] = useState("");
+  const [fDataAgendFim, setFDataAgendFim] = useState("");
 
   const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
   const destinoOptions = useMemo(()=> uniq(solicitacoes.map(p=>p.local)), [solicitacoes]);
@@ -1195,9 +1197,11 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
       (!fDesfecho || (fDesfecho === "Sem desfecho" ? !p.resultadoViagem : p.resultadoViagem === fDesfecho)) &&
       (!fTipoAgendamento || p.tipoAgendamento === fTipoAgendamento) &&
       (!fDataIni || (p.dataViagem && p.dataViagem >= fDataIni)) &&
-      (!fDataFim || (p.dataViagem && p.dataViagem <= fDataFim))
+      (!fDataFim || (p.dataViagem && p.dataViagem <= fDataFim)) &&
+      (!fDataAgendIni || (p.dataAgendamento && p.dataAgendamento >= fDataAgendIni)) &&
+      (!fDataAgendFim || (p.dataAgendamento && p.dataAgendamento <= fDataAgendFim))
     );
-  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fDesfecho, fTipoAgendamento, fDataIni, fDataFim]);
+  }, [solicitacoes, q, fStatus, fDestino, fMotorista, fDesfecho, fTipoAgendamento, fDataIni, fDataFim, fDataAgendIni, fDataAgendFim]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -1209,8 +1213,8 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
     faltou: filtered.filter(p=>p.resultadoViagem==="Paciente faltou").length,
   }), [filtered]);
 
-  const hasFilters = fStatus || fDestino || fMotorista || fDesfecho || fTipoAgendamento || fDataIni || fDataFim;
-  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFDesfecho(""); setFTipoAgendamento(""); setFDataIni(""); setFDataFim(""); };
+  const hasFilters = fStatus || fDestino || fMotorista || fDesfecho || fTipoAgendamento || fDataIni || fDataFim || fDataAgendIni || fDataAgendFim;
+  const clearAll = () => { setFStatus(""); setFDestino(""); setFMotorista(""); setFDesfecho(""); setFTipoAgendamento(""); setFDataIni(""); setFDataFim(""); setFDataAgendIni(""); setFDataAgendFim(""); };
 
   return <div className="card">
     <div className="stat-row" style={{display:"flex", flexWrap:"wrap", gap:10, marginBottom:16}}>
@@ -1242,7 +1246,11 @@ function SolicitacoesList({ solicitacoes, loading, onEdit, onDelete, motoristas,
         {TIPOS_AGENDAMENTO.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
       <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
-        De <input type="date" style={{maxWidth:150}} value={fDataIni} onChange={e=>setFDataIni(e.target.value)} />
+        Agendado de <input type="date" style={{maxWidth:150}} value={fDataAgendIni} onChange={e=>setFDataAgendIni(e.target.value)} />
+        até <input type="date" style={{maxWidth:150}} value={fDataAgendFim} onChange={e=>setFDataAgendFim(e.target.value)} />
+      </span>
+      <span style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
+        Viagem de <input type="date" style={{maxWidth:150}} value={fDataIni} onChange={e=>setFDataIni(e.target.value)} />
         até <input type="date" style={{maxWidth:150}} value={fDataFim} onChange={e=>setFDataFim(e.target.value)} />
       </span>
       {hasFilters && <button className="btn btn-secondary" style={{padding:'10px 14px'}} onClick={clearAll}>Limpar filtros</button>}
