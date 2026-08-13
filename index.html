@@ -94,14 +94,22 @@
       list: async function(prefix, shared){
         if(!sb){ showBanner(); return {keys:[], items:[], prefix:prefix, shared:shared}; }
         try{
-          var q = sb.from('tfd_kv').select('key,value');
-          if(prefix) q = q.like('key', prefix + '%');
-          var res = await q;
-          if(res.error) throw res.error;
-          var rows = res.data || [];
+          var PAGE = 1000;
+          var offset = 0;
+          var allRows = [];
+          while(true){
+            var q = sb.from('tfd_kv').select('key,value').range(offset, offset + PAGE - 1);
+            if(prefix) q = q.like('key', prefix + '%');
+            var res = await q;
+            if(res.error) throw res.error;
+            var rows = res.data || [];
+            allRows = allRows.concat(rows);
+            if(rows.length < PAGE) break; // última página
+            offset += PAGE;
+          }
           return {
-            keys: rows.map(function(r){ return r.key; }),
-            items: rows.map(function(r){ return {key:r.key, value:r.value}; }),
+            keys: allRows.map(function(r){ return r.key; }),
+            items: allRows.map(function(r){ return {key:r.key, value:r.value}; }),
             prefix:prefix, shared:shared
           };
         }catch(e){ showBanner(); showFatal('Falha ao listar dados: ' + (e.message||e)); return {keys:[], items:[], prefix:prefix, shared:shared}; }
