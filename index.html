@@ -909,8 +909,11 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
     notify(`Dados de ${p.nome} preenchidos. Complete os dados da nova viagem.`);
   };
 
-  const addDataExtra = () => setDatasExtras(d => [...d, ""]);
-  const updateDataExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? value : v));
+  const addDataExtra = () => setDatasExtras(d => [...d, { data: "", motoristaId: "", acompanhante: "Não", nomeAcompanhante: "" }]);
+  const updateDataExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? {...v, data: value} : v));
+  const updateMotoristaExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? {...v, motoristaId: value} : v));
+  const updateAcompanhanteExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? {...v, acompanhante: value} : v));
+  const updateNomeAcompanhanteExtra = (idx, value) => setDatasExtras(d => d.map((v,i) => i===idx ? {...v, nomeAcompanhante: value} : v));
   const removeDataExtra = (idx) => setDatasExtras(d => d.filter((_,i) => i!==idx));
 
   const handleSubmit = async () => {
@@ -956,7 +959,18 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       if(!confirmar) return;
     }
 
-    const datasValidas = [...new Set([form.dataViagem, ...datasExtras.filter(Boolean)])].sort();
+    // Cada data (principal + extras) pode ter seu próprio motorista/veículo responsável
+    const entradas = [
+      { data: form.dataViagem, motoristaId: form.motoristaId, acompanhante: form.acompanhante, nomeAcompanhante: form.nomeAcompanhante },
+      ...datasExtras.filter(d => d.data).map(d => ({ data: d.data, motoristaId: d.motoristaId, acompanhante: d.acompanhante, nomeAcompanhante: d.nomeAcompanhante }))
+    ];
+    const vistos = new Set();
+    const datasEntradasUnicas = entradas.filter(e => {
+      if(vistos.has(e.data)) return false;
+      vistos.add(e.data);
+      return true;
+    }).sort((a,b) => a.data.localeCompare(b.data));
+    const datasValidas = datasEntradasUnicas.map(e => e.data);
 
     const duplicadas = datasValidas
       .map(dt => solicitacoes.find(s =>
@@ -974,9 +988,9 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
       if(!confirmar) return;
     }
 
-    await save({ ...form, dataViagem: datasValidas[0] });
-    for(const dt of datasValidas.slice(1)){
-      await save({ ...form, id: null, createdAt: null, dataViagem: dt, status:"Agendado", motoristaId:"", resultadoViagem:"", dataRealizacao:"" });
+    await save({ ...form, dataViagem: datasEntradasUnicas[0].data, motoristaId: datasEntradasUnicas[0].motoristaId, acompanhante: datasEntradasUnicas[0].acompanhante, nomeAcompanhante: datasEntradasUnicas[0].nomeAcompanhante });
+    for(const e of datasEntradasUnicas.slice(1)){
+      await save({ ...form, id: null, createdAt: null, dataViagem: e.data, status:"Agendado", motoristaId: e.motoristaId || "", acompanhante: e.acompanhante || "Não", nomeAcompanhante: e.nomeAcompanhante || "", resultadoViagem:"", dataRealizacao:"" });
     }
     notify(editTarget ? "Solicitação atualizada" : (datasValidas.length > 1 ? `${datasValidas.length} solicitações cadastradas (uma por data)` : "Solicitação de transporte cadastrada"));
     setForm(blankSolicitacao());
@@ -1077,9 +1091,24 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
         </select>
       </Field>
     </div>
-    <div className="grid grid-2" style={{marginTop:16}}>
+    <div className="grid grid-3" style={{marginTop:16}}>
       <Field label="Data da viagem / consulta" required><input type="date" value={form.dataViagem} onChange={set('dataViagem')} /></Field>
-      <Field label="Horário de saída"><input type="time" value={form.horarioSaida} onChange={set('horarioSaida')} /></Field>
+      {form.status === "Agendado" && (
+        <Field label="Motorista / veículo responsável">
+          <select value={form.motoristaId} onChange={set('motoristaId')}>
+            <option value="">Selecione</option>
+            {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Necessita acompanhante?">
+        <select value={form.acompanhante} onChange={set('acompanhante')}>
+          <option>Não</option><option>Sim</option>
+        </select>
+      </Field>
+      {form.acompanhante === "Sim" && (
+        <Field label="Nome do acompanhante"><input placeholder="Nome completo" value={form.nomeAcompanhante} onChange={set('nomeAcompanhante')} /></Field>
+      )}
     </div>
 
     <div style={{marginTop:14}}>
@@ -1090,10 +1119,23 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
         <button type="button" className="btn btn-secondary" onClick={addDataExtra}><IconPlus/> Adicionar outra data</button>
       </div>
       {datasExtras.length > 0 && (
-        <div style={{display:"flex", flexDirection:"column", gap:8, marginTop:10}}>
+        <div style={{display:"flex", flexDirection:"column", gap:10, marginTop:10}}>
           {datasExtras.map((d, idx) => (
-            <div key={idx} style={{display:"flex", alignItems:"center", gap:8}}>
-              <input type="date" value={d} onChange={e=>updateDataExtra(idx, e.target.value)} style={{maxWidth:200}} />
+            <div key={idx} style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", background:"var(--panel2)", padding:10, borderRadius:10}}>
+              <input type="date" value={d.data} onChange={e=>updateDataExtra(idx, e.target.value)} style={{maxWidth:200}} />
+              <select value={d.motoristaId} onChange={e=>updateMotoristaExtra(idx, e.target.value)} style={{maxWidth:280}}>
+                <option value="">Motorista / veículo responsável</option>
+                {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
+              </select>
+              <label style={{display:"flex", alignItems:"center", gap:6, fontSize:13, color:"var(--muted)"}}>
+                Acompanhante:
+                <select value={d.acompanhante} onChange={e=>updateAcompanhanteExtra(idx, e.target.value)} style={{maxWidth:110}}>
+                  <option>Não</option><option>Sim</option>
+                </select>
+              </label>
+              {d.acompanhante === "Sim" && (
+                <input placeholder="Nome do acompanhante" value={d.nomeAcompanhante} onChange={e=>updateNomeAcompanhanteExtra(idx, e.target.value)} style={{maxWidth:200}} />
+              )}
               <button type="button" className="icon-btn danger" onClick={()=>removeDataExtra(idx)}><IconTrash/></button>
             </div>
           ))}
@@ -1107,14 +1149,6 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
           {VEICULOS.map(v => <option key={v}>{v}</option>)}
         </select>
       </Field>
-      <Field label="Necessita acompanhante?">
-        <select value={form.acompanhante} onChange={set('acompanhante')}>
-          <option>Não</option><option>Sim</option>
-        </select>
-      </Field>
-      {form.acompanhante === "Sim" && (
-        <Field label="Nome do acompanhante"><input placeholder="Nome completo" value={form.nomeAcompanhante} onChange={set('nomeAcompanhante')} /></Field>
-      )}
     </div>
 
     <div className="grid grid-3" style={{marginTop:16}}>
@@ -1123,14 +1157,6 @@ function SolicitacaoForm({ save, notify, editTarget, onDone, onRequestDelete, mo
           <option>Agendado</option><option>Lista de espera</option>
         </select>
       </Field>
-      {form.status === "Agendado" && (
-        <Field label="Motorista / veículo responsável">
-          <select value={form.motoristaId} onChange={set('motoristaId')}>
-            <option value="">Selecione</option>
-            {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome} ({m.tipoVeiculo}{m.placa ? " - " + m.placa : ""})</option>)}
-          </select>
-        </Field>
-      )}
       <Field label="Data do agendamento"><input type="date" value={form.dataAgendamento} onChange={set('dataAgendamento')} /></Field>
       <Field label="Agendado por"><input placeholder="Nome de quem realizou o agendamento" value={form.agendadoPor} onChange={set('agendadoPor')} /></Field>
       <Field label="Forma de agendamento">
@@ -2213,6 +2239,8 @@ function LembretesTab({ solicitacoes, salvar, notify }){
   const amanha = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); };
   const [data, setData] = useState(amanha());
   const [enviandoId, setEnviandoId] = useState(null);
+  const [fila, setFila] = useState(null); // array de pacientes pendentes, quando o envio em sequência está ativo
+  const [passo, setPasso] = useState(0);
   const fmt = (d) => d ? new Date(d+"T00:00").toLocaleDateString('pt-BR') : "—";
 
   const pendentes = useMemo(() => {
@@ -2225,13 +2253,33 @@ function LembretesTab({ solicitacoes, salvar, notify }){
 
   const enviarLembrete = async (p) => {
     const link = whatsappConfirmacaoLink(p);
-    if(!link){ notify(`${p.nome} não tem telefone cadastrado.`); return; }
+    if(!link){ notify(`${p.nome} não tem telefone cadastrado.`); return false; }
     setEnviandoId(p.id);
     window.open(link, '_blank');
     await salvar({ ...p, lembreteEnviadoEm: Date.now(), lembreteEnviadoPor: getOperadorNome() });
     setEnviandoId(null);
     notify("Lembrete registrado para " + p.nome);
+    return true;
   };
+
+  // Envio "para todos": como o navegador (e o próprio WhatsApp) não deixam abrir várias
+  // conversas de uma vez sozinhas, isso guia você clicando um por um, sem precisar
+  // caçar cada linha na tabela — um clique abre o WhatsApp e já avança pro próximo.
+  const iniciarEnvioTodos = () => {
+    const semTelefone = pendentes.filter(p => !p.lembreteEnviadoEm && !whatsappConfirmacaoLink(p));
+    const comTelefone = pendentes.filter(p => !p.lembreteEnviadoEm && whatsappConfirmacaoLink(p));
+    if(comTelefone.length === 0){ notify("Não há pendentes com telefone cadastrado para enviar."); return; }
+    if(semTelefone.length > 0) notify(`${semTelefone.length} paciente(s) sem telefone serão pulados.`);
+    setFila(comTelefone);
+    setPasso(0);
+    enviarLembrete(comTelefone[0]);
+  };
+  const proximoDaFila = async () => {
+    const prox = passo + 1;
+    if(prox < fila.length){ await enviarLembrete(fila[prox]); setPasso(prox); }
+    else { setPasso(prox); }
+  };
+  const encerrarFila = () => { setFila(null); setPasso(0); };
 
   return <div className="card">
     <div className="section-title" style={{marginTop:0}}>Lembretes de viagem</div>
@@ -2249,6 +2297,41 @@ function LembretesTab({ solicitacoes, salvar, notify }){
         <p style={{fontSize:13, marginBottom:12}}>
           {pendentes.length} paciente(s) agendado(s) para {fmt(data)}{naoEnviados > 0 ? ` — ${naoEnviados} sem lembrete enviado` : " — todos já foram lembrados"}.
         </p>
+
+        {!fila && naoEnviados > 0 && (
+          <div className="actions-row" style={{marginBottom:14}}>
+            <button className="btn btn-secondary" style={{color:"#25D366"}} onClick={iniciarEnvioTodos}>
+              <IconWhatsapp/> Enviar para todos pendentes ({naoEnviados})
+            </button>
+          </div>
+        )}
+
+        {fila && (
+          <div className="card" style={{background:"var(--panel2)", marginBottom:14}}>
+            {passo < fila.length ? (
+              <>
+                <p style={{fontSize:13, marginBottom:10}}>
+                  Enviando lembretes um por um — o navegador não deixa abrir vários de uma vez sozinho, então é só continuar clicando.<br/>
+                  <b>{passo + 1} de {fila.length}</b>: acabou de abrir o WhatsApp de <b>{fila[passo].nome}</b>. Confirme o envio lá e depois clique para continuar.
+                </p>
+                <div className="actions-row">
+                  <button className="btn btn-primary" style={{color:"#fff"}} onClick={proximoDaFila}>
+                    <IconWhatsapp/> Próximo ({passo + 2 <= fila.length ? fila[passo+1].nome : "concluir"})
+                  </button>
+                  <button className="btn btn-secondary" onClick={encerrarFila}>Parar por aqui</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{fontSize:13, marginBottom:10, color:"#16a34a", fontWeight:600}}>
+                  Concluído! {fila.length} lembrete(s) enviado(s) e registrado(s).
+                </p>
+                <button className="btn btn-secondary" onClick={encerrarFila}>Fechar</button>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="table-scroll"><table>
           <thead><tr><th>Paciente</th><th>Horário</th><th>Destino</th><th>Telefone</th><th>Lembrete</th><th></th></tr></thead>
           <tbody>
@@ -2817,5 +2900,6 @@ function App(){
 </script>
 </body>
 </html>
+
 
 
