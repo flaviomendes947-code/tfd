@@ -92,14 +92,19 @@
         }catch(e){ showBanner(); showFatal('Falha ao excluir dados: ' + (e.message||e)); return null; }
       },
       list: async function(prefix, shared){
-        if(!sb){ showBanner(); return {keys:[], prefix:prefix, shared:shared}; }
+        if(!sb){ showBanner(); return {keys:[], items:[], prefix:prefix, shared:shared}; }
         try{
-          var q = sb.from('tfd_kv').select('key');
+          var q = sb.from('tfd_kv').select('key,value');
           if(prefix) q = q.like('key', prefix + '%');
           var res = await q;
           if(res.error) throw res.error;
-          return { keys: (res.data||[]).map(function(r){ return r.key; }), prefix:prefix, shared:shared };
-        }catch(e){ showBanner(); showFatal('Falha ao listar dados: ' + (e.message||e)); return {keys:[], prefix:prefix, shared:shared}; }
+          var rows = res.data || [];
+          return {
+            keys: rows.map(function(r){ return r.key; }),
+            items: rows.map(function(r){ return {key:r.key, value:r.value}; }),
+            prefix:prefix, shared:shared
+          };
+        }catch(e){ showBanner(); showFatal('Falha ao listar dados: ' + (e.message||e)); return {keys:[], items:[], prefix:prefix, shared:shared}; }
       }
     };
   })();
@@ -415,10 +420,10 @@ async function logAlteracaoSolicitacao(antigo, novo){
 async function carregarHistoricoAlteracoes(solicitacaoId){
   try{
     const listRes = await Store.list(`tfd_log:${solicitacaoId}:`, true);
-    const keys = (listRes && listRes.keys) ? listRes.keys : [];
-    const results = await Promise.all(keys.map(async k => {
-      try{ const r = await Store.get(k, true); return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
-    }));
+    const itens = (listRes && listRes.items) ? listRes.items : [];
+    const results = itens.map(it => {
+      try{ return JSON.parse(it.value); }catch(e){ return null; }
+    });
     return results.filter(Boolean).sort((a,b) => b.quando - a.quando);
   }catch(e){ return []; }
 }
@@ -602,13 +607,10 @@ function useCollection(prefix){
     setLoading(true);
     try{
       const listRes = await Store.list(prefix, true);
-      const keys = (listRes && listRes.keys) ? listRes.keys : [];
-      const results = await Promise.all(keys.map(async k => {
-        try{
-          const r = await Store.get(k, true);
-          return r ? JSON.parse(r.value) : null;
-        }catch(e){ return null; }
-      }));
+      const itens = (listRes && listRes.items) ? listRes.items : [];
+      const results = itens.map(it => {
+        try{ return JSON.parse(it.value); }catch(e){ return null; }
+      });
       setItems(results.filter(Boolean).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
     }catch(e){
       setItems([]);
@@ -716,10 +718,10 @@ function DriverConfirmView({ motoristaId, data, nomeSlug }){
         setMotorista(motRes ? JSON.parse(motRes.value) : null);
 
         const listRes = await Store.list("tfd_solicitacoes:", true);
-        const keys = (listRes && listRes.keys) || [];
-        const all = (await Promise.all(keys.map(async k => {
-          try{ const r = await Store.get(k, true); return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
-        }))).filter(Boolean);
+        const itens = (listRes && listRes.items) ? listRes.items : [];
+        const all = itens.map(it => {
+          try{ return JSON.parse(it.value); }catch(e){ return null; }
+        }).filter(Boolean);
 
         const doDia = all
           .filter(p => p.motoristaId === motoristaId && p.dataViagem === data && p.status === "Agendado")
@@ -2900,6 +2902,4 @@ function App(){
 </script>
 </body>
 </html>
-
-
 
