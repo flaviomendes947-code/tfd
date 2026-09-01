@@ -2048,7 +2048,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
 
   const datasDisponiveis = useMemo(() => {
     const set = new Set(porTipo.map(p => p.dataViagem).filter(Boolean));
-    return Array.from(set).sort();
+    return Array.from(set).sort().reverse();
   }, [porTipo]);
 
   const porData = useMemo(() => {
@@ -2109,7 +2109,7 @@ function ImprimirRotaTab({ motoristas, solicitacoes, notify }){
       map[key].pacientes += 1;
       if(p.acompanhante === "Sim") map[key].acompanhantes += 1;
     });
-    return Object.entries(map).sort(([a],[b]) => a.localeCompare(b));
+    return Object.entries(map).sort(([a],[b]) => b.localeCompare(a));
   }, [porTipo]);
 
   return <div>
@@ -2910,6 +2910,8 @@ function App(){
 </script>
 </body>
 </html>
+
+
 
 
 
