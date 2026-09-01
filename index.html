@@ -104,8 +104,8 @@
             if(res.error) throw res.error;
             var rows = res.data || [];
             allRows = allRows.concat(rows);
-            if(rows.length < PAGE) break; // última página
-            offset += PAGE;
+            if(rows.length === 0) break; // não veio mais nada: chegou ao fim de verdade
+            offset += rows.length; // avança pela quantidade REAL recebida (o Supabase pode limitar menos que PAGE por pedido)
           }
           return {
             keys: allRows.map(function(r){ return r.key; }),
@@ -2975,6 +2975,7 @@ function App(){
 </script>
 </body>
 </html>
+
 
 
 
