@@ -50,6 +50,10 @@
       var el = document.getElementById('storage-fallback-banner');
       if(el) el.style.display = 'block';
     }
+    function hideBanner(){
+      var el = document.getElementById('storage-fallback-banner');
+      if(el) el.style.display = 'none';
+    }
     window.addEventListener('error', function(e){ showFatal(e.message || 'erro desconhecido'); });
     window.addEventListener('unhandledrejection', function(e){
       var r = e.reason;
@@ -72,6 +76,7 @@
         try{
           var res = await sb.from('tfd_kv').select('value').eq('key', key).maybeSingle();
           if(res.error) throw res.error;
+          hideBanner();
           return res.data ? {key:key, value:res.data.value, shared:shared} : null;
         }catch(e){ showBanner(); showFatal('Falha ao ler dados: ' + (e.message||e)); return null; }
       },
@@ -80,6 +85,7 @@
         try{
           var res = await sb.from('tfd_kv').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
           if(res.error) throw res.error;
+          hideBanner();
           return {key:key, value:value, shared:shared};
         }catch(e){ showBanner(); showFatal('Falha ao salvar dados: ' + (e.message||e)); return null; }
       },
@@ -88,6 +94,7 @@
         try{
           var res = await sb.from('tfd_kv').delete().eq('key', key);
           if(res.error) throw res.error;
+          hideBanner();
           return {key:key, deleted:true, shared:shared};
         }catch(e){ showBanner(); showFatal('Falha ao excluir dados: ' + (e.message||e)); return null; }
       },
@@ -107,6 +114,7 @@
             if(rows.length === 0) break; // não veio mais nada: chegou ao fim de verdade
             offset += rows.length; // avança pela quantidade REAL recebida (o Supabase pode limitar menos que PAGE por pedido)
           }
+          hideBanner();
           return {
             keys: allRows.map(function(r){ return r.key; }),
             items: allRows.map(function(r){ return {key:r.key, value:r.value}; }),
@@ -2975,6 +2983,8 @@ function App(){
 </script>
 </body>
 </html>
+
+
 
 
 
